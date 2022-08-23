@@ -124,8 +124,17 @@ export namespace dex {
     to: string,
     hash: string,
     logIndex: BigInt,
-    timestamp: BigInt
+    timestamp: BigInt,
+    blockNumber: BigInt
   ): void {
+    // log.info("addLiquidity: {}, {}, {}, {}, {}, {}", [
+    //   poolAddress,
+    //   from,
+    //   to,
+    //   hash,
+    //   logIndex.toString(),
+    //   timestamp.toString(),
+    // ]);
     const dexPool = getOrCreateAirDexPool(poolAddress);
     const inputTokenTransfers: Array<AirTokenTransfer> = [];
     if (dexPool.inputToken.length > 0) {
@@ -165,7 +174,8 @@ export namespace dex {
       outputTokenTransfer,
       timestamp,
       hash,
-      logIndex
+      logIndex,
+      blockNumber
     );
   }
 
@@ -208,9 +218,11 @@ export namespace dex {
     outputTokenTransfer: AirTokenTransfer,
     timestamp: BigInt,
     hash: string,
-    logIndex: BigInt
+    logIndex: BigInt,
+    blockNumber: BigInt
   ): void {
     const aggregateEntity = getOrCreateAirDailyAggregateEntity(
+      blockNumber,
       dexPool.poolAddress,
       AirProtocolType.EXCHANGE,
       AirProtocolActionType.ADD_LIQUIDITY,
@@ -280,7 +292,7 @@ export namespace dex {
         iTokenTransfer.amount,
         priceInUsd,
         aggregateEntity.daySinceEpoch,
-        isAccountAlreadyAdded
+        !isAccountAlreadyAdded
       );
     }
 
@@ -729,7 +741,8 @@ export namespace dex {
     to: string,
     hash: string,
     logIndex: BigInt,
-    timestamp: BigInt
+    timestamp: BigInt,
+    blockNumber: BigInt
   ): void {
     const dexPool = getOrCreateAirDexPool(poolAddress);
     if (dexPool.inputToken.length == 0) {
@@ -763,6 +776,7 @@ export namespace dex {
     );
 
     const aggregateEntity = getOrCreateAirDailyAggregateEntity(
+      blockNumber,
       poolAddress,
       AirProtocolType.EXCHANGE,
       AirProtocolActionType.SWAP,
@@ -1182,6 +1196,19 @@ export namespace dex {
   ): void {
     const pool = getOrCreateAirDexPool(poolAddress);
     pool.tokenBalances = inputBalances;
+    pool.save();
+  }
+
+  export function updatePoolReserve(
+    poolAddress: string,
+    inputBalances: Array<BigInt>
+  ): void {
+    const pool = getOrCreateAirDexPool(poolAddress);
+    const poolBalance = pool.tokenBalances;
+    for (let index = 0; index < poolBalance.length; index++) {
+      poolBalance[index] = poolBalance[index].plus(inputBalances[index]);
+    }
+    pool.tokenBalances = poolBalance;
     pool.save();
   }
 }

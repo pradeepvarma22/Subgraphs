@@ -20,8 +20,8 @@ import {
   AirMeta,
   AirToken,
 } from "../../generated/schema";
-import { ERC721MetaData } from "../../generated/templates/Pair/ERC721MetaData";
-import { ERC20 } from "../../generated/Factory/ERC20";
+import { ERC721MetaData } from "../../generated/templates/Pair/ERC721MetaData"; //../../generated/templates/Pool/ERC721MetaData";
+import { ERC20 } from "../../generated/templates/Pair/ERC20";
 import { getNetworkSchemaName } from "./utils/network";
 import { calculatePercentage } from "./utils/maths";
 
@@ -194,6 +194,7 @@ export function getOrCreateAirContract(contractAddress: Address): AirContract {
 }
 
 export function getOrCreateAirDailyAggregateEntity(
+  blockNumber: BigInt,
   contractAddress: string,
   protocolType: string,
   protocolActionType: string,
@@ -219,10 +220,11 @@ export function getOrCreateAirDailyAggregateEntity(
     entity.daySinceEpoch = BigInt.fromString(
       getDaysSinceEpoch(timestamp.toI32())
     );
+    entity.blockHeight = blockNumber;
     entity.startDayTimestamp = getDayOpenTime(timestamp);
     entity.walletCount = BigInt.zero();
     entity.transactionCount = BigInt.zero();
-    entity.network = "MATIC"; //getNetworkSchemaName(dataSource.network()); //"MAINNET"; //todo remove hardcode, check massari
+    entity.network = "MAINNET"; //getNetworkSchemaName(dataSource.network()); //"MAINNET"; //todo remove hardcode, check massari
     entity.updatedTimestamp = timestamp;
     entity.protocolType = protocolType;
     entity.protocolActionType = protocolActionType;

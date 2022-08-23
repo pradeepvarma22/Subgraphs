@@ -82,6 +82,7 @@ export class AirDailyAggregateEntity extends Entity {
     this.set("transactionCount", Value.fromBigInt(BigInt.zero()));
     this.set("volumeInUSD", Value.fromBigDecimal(BigDecimal.zero()));
     this.set("dailyChange", Value.fromString(""));
+    this.set("blockHeight", Value.fromBigInt(BigInt.zero()));
   }
 
   save(): void {
@@ -246,6 +247,15 @@ export class AirDailyAggregateEntity extends Entity {
 
   set dailyChange(value: string) {
     this.set("dailyChange", Value.fromString(value));
+  }
+
+  get blockHeight(): BigInt {
+    let value = this.get("blockHeight");
+    return value!.toBigInt();
+  }
+
+  set blockHeight(value: BigInt) {
+    this.set("blockHeight", Value.fromBigInt(value));
   }
 
   get extraData(): Array<string> | null {

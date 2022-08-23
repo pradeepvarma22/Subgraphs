@@ -20,7 +20,8 @@ export function handleMint(event: Mint): void {
     event.address.toHexString(),
     event.transaction.hash.toHexString(),
     event.logIndex,
-    event.block.timestamp
+    event.block.timestamp,
+    event.block.number
   );
   updateAirMeta(event);
 }
@@ -69,7 +70,8 @@ export function handleSwap(event: Swap): void {
     event.params.to.toHexString(),
     event.transaction.hash.toHexString(),
     event.logIndex,
-    event.block.timestamp
+    event.block.timestamp,
+    event.block.number
   );
   updateAirMeta(event);
 }
