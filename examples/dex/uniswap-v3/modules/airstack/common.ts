@@ -220,7 +220,6 @@ export function getOrCreateAirDailyAggregateEntity(
     entity.daySinceEpoch = BigInt.fromString(
       getDaysSinceEpoch(timestamp.toI32())
     );
-    entity.blockHeight = blockNumber;
     entity.startDayTimestamp = getDayOpenTime(timestamp);
     entity.walletCount = BigInt.zero();
     entity.transactionCount = BigInt.zero();
@@ -235,6 +234,7 @@ export function getOrCreateAirDailyAggregateEntity(
     airContract.save();
     entity.contract = airContract.id;
   }
+  entity.blockHeight = blockNumber;
   return entity as AirDailyAggregateEntity;
 }
 
