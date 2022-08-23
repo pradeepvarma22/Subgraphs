@@ -51,7 +51,8 @@ export function handleMint(event: MintEvent): void {
     event.address.toHexString(),
     event.transaction.hash.toHexString(),
     event.logIndex,
-    event.block.timestamp
+    event.block.timestamp,
+    event.block.number
   );
   updateAirMeta(event);
   dex.updatePoolReserve(event.address.toHexString(), [
@@ -109,7 +110,8 @@ export function handleSwap(event: SwapEvent): void {
     event.params.recipient.toHexString(),
     event.transaction.hash.toHexString(),
     event.logIndex,
-    event.block.timestamp
+    event.block.timestamp,
+    event.block.number
   );
   updateAirMeta(event);
 

@@ -124,7 +124,8 @@ export namespace dex {
     to: string,
     hash: string,
     logIndex: BigInt,
-    timestamp: BigInt
+    timestamp: BigInt,
+    blockNumber: BigInt
   ): void {
     // log.info("addLiquidity: {}, {}, {}, {}, {}, {}", [
     //   poolAddress,
@@ -173,7 +174,8 @@ export namespace dex {
       outputTokenTransfer,
       timestamp,
       hash,
-      logIndex
+      logIndex,
+      blockNumber
     );
   }
 
@@ -216,9 +218,11 @@ export namespace dex {
     outputTokenTransfer: AirTokenTransfer,
     timestamp: BigInt,
     hash: string,
-    logIndex: BigInt
+    logIndex: BigInt,
+    blockNumber: BigInt
   ): void {
     const aggregateEntity = getOrCreateAirDailyAggregateEntity(
+      blockNumber,
       dexPool.poolAddress,
       AirProtocolType.EXCHANGE,
       AirProtocolActionType.ADD_LIQUIDITY,
@@ -737,7 +741,8 @@ export namespace dex {
     to: string,
     hash: string,
     logIndex: BigInt,
-    timestamp: BigInt
+    timestamp: BigInt,
+    blockNumber: BigInt
   ): void {
     const dexPool = getOrCreateAirDexPool(poolAddress);
     if (dexPool.inputToken.length == 0) {
@@ -771,6 +776,7 @@ export namespace dex {
     );
 
     const aggregateEntity = getOrCreateAirDailyAggregateEntity(
+      blockNumber,
       poolAddress,
       AirProtocolType.EXCHANGE,
       AirProtocolActionType.SWAP,

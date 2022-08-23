@@ -26,6 +26,7 @@ import {
 
 export namespace nft {
   export function trackNFTSaleTransactions(
+    blockNumber: BigInt,
     txHash: string,
     fromArray: Address[],
     toArray: Address[],
@@ -50,10 +51,12 @@ export namespace nft {
     for (let i = 0; i < transactionCount; i++) {
       // SELL Daily AggregatedEntity
       let sellActionDailyAggregatedEntity = getOrCreateAirDailyAggregateEntity(
+        blockNumber,
         contractAddressArray[i].toHexString(),
         AirProtocolType.NFT_MARKET_PLACE,
         AirProtocolActionType.SELL,
-        timestamp
+        timestamp,
+        ""
       );
       const sellActionDailyAggregatedEntityId =
         sellActionDailyAggregatedEntity.id;
@@ -68,10 +71,12 @@ export namespace nft {
 
       // Buy Daily Aggregated Entity
       let buyActionDailyAggregatedEntity = getOrCreateAirDailyAggregateEntity(
+        blockNumber,
         contractAddressArray[i].toHexString(),
         AirProtocolType.NFT_MARKET_PLACE,
         AirProtocolActionType.BUY,
-        timestamp
+        timestamp,
+        ""
       );
       const buyActionDailyAggregatedEntityId =
         buyActionDailyAggregatedEntity.id;

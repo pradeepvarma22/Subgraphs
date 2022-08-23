@@ -10,97 +10,55 @@ import {
   BigInt
 } from "@graphprotocol/graph-ts";
 
-export class AccessControllerSet extends ethereum.Event {
-  get params(): AccessControllerSet__Params {
-    return new AccessControllerSet__Params(this);
+export class AnswerUpdated extends ethereum.Event {
+  get params(): AnswerUpdated__Params {
+    return new AnswerUpdated__Params(this);
   }
 }
 
-export class AccessControllerSet__Params {
-  _event: AccessControllerSet;
+export class AnswerUpdated__Params {
+  _event: AnswerUpdated;
 
-  constructor(event: AccessControllerSet) {
+  constructor(event: AnswerUpdated) {
     this._event = event;
   }
 
-  get accessController(): Address {
-    return this._event.parameters[0].value.toAddress();
+  get current(): BigInt {
+    return this._event.parameters[0].value.toBigInt();
   }
 
-  get sender(): Address {
-    return this._event.parameters[1].value.toAddress();
+  get roundId(): BigInt {
+    return this._event.parameters[1].value.toBigInt();
   }
-}
 
-export class FeedConfirmed extends ethereum.Event {
-  get params(): FeedConfirmed__Params {
-    return new FeedConfirmed__Params(this);
+  get updatedAt(): BigInt {
+    return this._event.parameters[2].value.toBigInt();
   }
 }
 
-export class FeedConfirmed__Params {
-  _event: FeedConfirmed;
+export class NewRound extends ethereum.Event {
+  get params(): NewRound__Params {
+    return new NewRound__Params(this);
+  }
+}
 
-  constructor(event: FeedConfirmed) {
+export class NewRound__Params {
+  _event: NewRound;
+
+  constructor(event: NewRound) {
     this._event = event;
   }
 
-  get asset(): Address {
-    return this._event.parameters[0].value.toAddress();
+  get roundId(): BigInt {
+    return this._event.parameters[0].value.toBigInt();
   }
 
-  get denomination(): Address {
+  get startedBy(): Address {
     return this._event.parameters[1].value.toAddress();
   }
 
-  get latestAggregator(): Address {
-    return this._event.parameters[2].value.toAddress();
-  }
-
-  get previousAggregator(): Address {
-    return this._event.parameters[3].value.toAddress();
-  }
-
-  get nextPhaseId(): i32 {
-    return this._event.parameters[4].value.toI32();
-  }
-
-  get sender(): Address {
-    return this._event.parameters[5].value.toAddress();
-  }
-}
-
-export class FeedProposed extends ethereum.Event {
-  get params(): FeedProposed__Params {
-    return new FeedProposed__Params(this);
-  }
-}
-
-export class FeedProposed__Params {
-  _event: FeedProposed;
-
-  constructor(event: FeedProposed) {
-    this._event = event;
-  }
-
-  get asset(): Address {
-    return this._event.parameters[0].value.toAddress();
-  }
-
-  get denomination(): Address {
-    return this._event.parameters[1].value.toAddress();
-  }
-
-  get proposedAggregator(): Address {
-    return this._event.parameters[2].value.toAddress();
-  }
-
-  get currentAggregator(): Address {
-    return this._event.parameters[3].value.toAddress();
-  }
-
-  get sender(): Address {
-    return this._event.parameters[4].value.toAddress();
+  get startedAt(): BigInt {
+    return this._event.parameters[2].value.toBigInt();
   }
 }
 
@@ -145,37 +103,6 @@ export class OwnershipTransferred__Params {
 
   get to(): Address {
     return this._event.parameters[1].value.toAddress();
-  }
-}
-
-export class ChainlinkOracle__getPhaseResultPhaseStruct extends ethereum.Tuple {
-  get phaseId(): i32 {
-    return this[0].toI32();
-  }
-
-  get startingAggregatorRoundId(): BigInt {
-    return this[1].toBigInt();
-  }
-
-  get endingAggregatorRoundId(): BigInt {
-    return this[2].toBigInt();
-  }
-}
-
-export class ChainlinkOracle__getPhaseRangeResult {
-  value0: BigInt;
-  value1: BigInt;
-
-  constructor(value0: BigInt, value1: BigInt) {
-    this.value0 = value0;
-    this.value1 = value1;
-  }
-
-  toMap(): TypedMap<string, ethereum.Value> {
-    let map = new TypedMap<string, ethereum.Value>();
-    map.set("value0", ethereum.Value.fromUnsignedBigInt(this.value0));
-    map.set("value1", ethereum.Value.fromUnsignedBigInt(this.value1));
-    return map;
   }
 }
 
@@ -312,21 +239,52 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     return new ChainlinkOracle("ChainlinkOracle", address);
   }
 
-  decimals(base: Address, quote: Address): i32 {
-    let result = super.call("decimals", "decimals(address,address):(uint8)", [
-      ethereum.Value.fromAddress(base),
-      ethereum.Value.fromAddress(quote)
-    ]);
+  accessController(): Address {
+    let result = super.call(
+      "accessController",
+      "accessController():(address)",
+      []
+    );
+
+    return result[0].toAddress();
+  }
+
+  try_accessController(): ethereum.CallResult<Address> {
+    let result = super.tryCall(
+      "accessController",
+      "accessController():(address)",
+      []
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toAddress());
+  }
+
+  aggregator(): Address {
+    let result = super.call("aggregator", "aggregator():(address)", []);
+
+    return result[0].toAddress();
+  }
+
+  try_aggregator(): ethereum.CallResult<Address> {
+    let result = super.tryCall("aggregator", "aggregator():(address)", []);
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toAddress());
+  }
+
+  decimals(): i32 {
+    let result = super.call("decimals", "decimals():(uint8)", []);
 
     return result[0].toI32();
   }
 
-  try_decimals(base: Address, quote: Address): ethereum.CallResult<i32> {
-    let result = super.tryCall(
-      "decimals",
-      "decimals(address,address):(uint8)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
-    );
+  try_decimals(): ethereum.CallResult<i32> {
+    let result = super.tryCall("decimals", "decimals():(uint8)", []);
     if (result.reverted) {
       return new ethereum.CallResult();
     }
@@ -334,22 +292,14 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     return ethereum.CallResult.fromValue(value[0].toI32());
   }
 
-  description(base: Address, quote: Address): string {
-    let result = super.call(
-      "description",
-      "description(address,address):(string)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
-    );
+  description(): string {
+    let result = super.call("description", "description():(string)", []);
 
     return result[0].toString();
   }
 
-  try_description(base: Address, quote: Address): ethereum.CallResult<string> {
-    let result = super.tryCall(
-      "description",
-      "description(address,address):(string)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
-    );
+  try_description(): ethereum.CallResult<string> {
+    let result = super.tryCall("description", "description():(string)", []);
     if (result.reverted) {
       return new ethereum.CallResult();
     }
@@ -357,140 +307,18 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     return ethereum.CallResult.fromValue(value[0].toString());
   }
 
-  getAccessController(): Address {
-    let result = super.call(
-      "getAccessController",
-      "getAccessController():(address)",
-      []
-    );
-
-    return result[0].toAddress();
-  }
-
-  try_getAccessController(): ethereum.CallResult<Address> {
-    let result = super.tryCall(
-      "getAccessController",
-      "getAccessController():(address)",
-      []
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(value[0].toAddress());
-  }
-
-  getAnswer(base: Address, quote: Address, roundId: BigInt): BigInt {
-    let result = super.call(
-      "getAnswer",
-      "getAnswer(address,address,uint256):(int256)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(roundId)
-      ]
-    );
-
-    return result[0].toBigInt();
-  }
-
-  try_getAnswer(
-    base: Address,
-    quote: Address,
-    roundId: BigInt
-  ): ethereum.CallResult<BigInt> {
-    let result = super.tryCall(
-      "getAnswer",
-      "getAnswer(address,address,uint256):(int256)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(roundId)
-      ]
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(value[0].toBigInt());
-  }
-
-  getCurrentPhaseId(base: Address, quote: Address): i32 {
-    let result = super.call(
-      "getCurrentPhaseId",
-      "getCurrentPhaseId(address,address):(uint16)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
-    );
-
-    return result[0].toI32();
-  }
-
-  try_getCurrentPhaseId(
-    base: Address,
-    quote: Address
-  ): ethereum.CallResult<i32> {
-    let result = super.tryCall(
-      "getCurrentPhaseId",
-      "getCurrentPhaseId(address,address):(uint16)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(value[0].toI32());
-  }
-
-  getFeed(base: Address, quote: Address): Address {
-    let result = super.call("getFeed", "getFeed(address,address):(address)", [
-      ethereum.Value.fromAddress(base),
-      ethereum.Value.fromAddress(quote)
+  getAnswer(_roundId: BigInt): BigInt {
+    let result = super.call("getAnswer", "getAnswer(uint256):(int256)", [
+      ethereum.Value.fromUnsignedBigInt(_roundId)
     ]);
 
-    return result[0].toAddress();
-  }
-
-  try_getFeed(base: Address, quote: Address): ethereum.CallResult<Address> {
-    let result = super.tryCall(
-      "getFeed",
-      "getFeed(address,address):(address)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(value[0].toAddress());
-  }
-
-  getNextRoundId(base: Address, quote: Address, roundId: BigInt): BigInt {
-    let result = super.call(
-      "getNextRoundId",
-      "getNextRoundId(address,address,uint80):(uint80)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(roundId)
-      ]
-    );
-
     return result[0].toBigInt();
   }
 
-  try_getNextRoundId(
-    base: Address,
-    quote: Address,
-    roundId: BigInt
-  ): ethereum.CallResult<BigInt> {
-    let result = super.tryCall(
-      "getNextRoundId",
-      "getNextRoundId(address,address,uint80):(uint80)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(roundId)
-      ]
-    );
+  try_getAnswer(_roundId: BigInt): ethereum.CallResult<BigInt> {
+    let result = super.tryCall("getAnswer", "getAnswer(uint256):(int256)", [
+      ethereum.Value.fromUnsignedBigInt(_roundId)
+    ]);
     if (result.reverted) {
       return new ethereum.CallResult();
     }
@@ -498,205 +326,11 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     return ethereum.CallResult.fromValue(value[0].toBigInt());
   }
 
-  getPhase(
-    base: Address,
-    quote: Address,
-    phaseId: i32
-  ): ChainlinkOracle__getPhaseResultPhaseStruct {
-    let result = super.call(
-      "getPhase",
-      "getPhase(address,address,uint16):((uint16,uint80,uint80))",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(phaseId))
-      ]
-    );
-
-    return changetype<ChainlinkOracle__getPhaseResultPhaseStruct>(
-      result[0].toTuple()
-    );
-  }
-
-  try_getPhase(
-    base: Address,
-    quote: Address,
-    phaseId: i32
-  ): ethereum.CallResult<ChainlinkOracle__getPhaseResultPhaseStruct> {
-    let result = super.tryCall(
-      "getPhase",
-      "getPhase(address,address,uint16):((uint16,uint80,uint80))",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(phaseId))
-      ]
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(
-      changetype<ChainlinkOracle__getPhaseResultPhaseStruct>(value[0].toTuple())
-    );
-  }
-
-  getPhaseFeed(base: Address, quote: Address, phaseId: i32): Address {
-    let result = super.call(
-      "getPhaseFeed",
-      "getPhaseFeed(address,address,uint16):(address)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(phaseId))
-      ]
-    );
-
-    return result[0].toAddress();
-  }
-
-  try_getPhaseFeed(
-    base: Address,
-    quote: Address,
-    phaseId: i32
-  ): ethereum.CallResult<Address> {
-    let result = super.tryCall(
-      "getPhaseFeed",
-      "getPhaseFeed(address,address,uint16):(address)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(phaseId))
-      ]
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(value[0].toAddress());
-  }
-
-  getPhaseRange(
-    base: Address,
-    quote: Address,
-    phaseId: i32
-  ): ChainlinkOracle__getPhaseRangeResult {
-    let result = super.call(
-      "getPhaseRange",
-      "getPhaseRange(address,address,uint16):(uint80,uint80)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(phaseId))
-      ]
-    );
-
-    return new ChainlinkOracle__getPhaseRangeResult(
-      result[0].toBigInt(),
-      result[1].toBigInt()
-    );
-  }
-
-  try_getPhaseRange(
-    base: Address,
-    quote: Address,
-    phaseId: i32
-  ): ethereum.CallResult<ChainlinkOracle__getPhaseRangeResult> {
-    let result = super.tryCall(
-      "getPhaseRange",
-      "getPhaseRange(address,address,uint16):(uint80,uint80)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(phaseId))
-      ]
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(
-      new ChainlinkOracle__getPhaseRangeResult(
-        value[0].toBigInt(),
-        value[1].toBigInt()
-      )
-    );
-  }
-
-  getPreviousRoundId(base: Address, quote: Address, roundId: BigInt): BigInt {
-    let result = super.call(
-      "getPreviousRoundId",
-      "getPreviousRoundId(address,address,uint80):(uint80)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(roundId)
-      ]
-    );
-
-    return result[0].toBigInt();
-  }
-
-  try_getPreviousRoundId(
-    base: Address,
-    quote: Address,
-    roundId: BigInt
-  ): ethereum.CallResult<BigInt> {
-    let result = super.tryCall(
-      "getPreviousRoundId",
-      "getPreviousRoundId(address,address,uint80):(uint80)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(roundId)
-      ]
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(value[0].toBigInt());
-  }
-
-  getProposedFeed(base: Address, quote: Address): Address {
-    let result = super.call(
-      "getProposedFeed",
-      "getProposedFeed(address,address):(address)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
-    );
-
-    return result[0].toAddress();
-  }
-
-  try_getProposedFeed(
-    base: Address,
-    quote: Address
-  ): ethereum.CallResult<Address> {
-    let result = super.tryCall(
-      "getProposedFeed",
-      "getProposedFeed(address,address):(address)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(value[0].toAddress());
-  }
-
-  getRoundData(
-    base: Address,
-    quote: Address,
-    _roundId: BigInt
-  ): ChainlinkOracle__getRoundDataResult {
+  getRoundData(_roundId: BigInt): ChainlinkOracle__getRoundDataResult {
     let result = super.call(
       "getRoundData",
-      "getRoundData(address,address,uint80):(uint80,int256,uint256,uint256,uint80)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(_roundId)
-      ]
+      "getRoundData(uint80):(uint80,int256,uint256,uint256,uint80)",
+      [ethereum.Value.fromUnsignedBigInt(_roundId)]
     );
 
     return new ChainlinkOracle__getRoundDataResult(
@@ -709,18 +343,12 @@ export class ChainlinkOracle extends ethereum.SmartContract {
   }
 
   try_getRoundData(
-    base: Address,
-    quote: Address,
     _roundId: BigInt
   ): ethereum.CallResult<ChainlinkOracle__getRoundDataResult> {
     let result = super.tryCall(
       "getRoundData",
-      "getRoundData(address,address,uint80):(uint80,int256,uint256,uint256,uint80)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(_roundId)
-      ]
+      "getRoundData(uint80):(uint80,int256,uint256,uint256,uint80)",
+      [ethereum.Value.fromUnsignedBigInt(_roundId)]
     );
     if (result.reverted) {
       return new ethereum.CallResult();
@@ -737,112 +365,19 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     );
   }
 
-  getRoundFeed(base: Address, quote: Address, roundId: BigInt): Address {
-    let result = super.call(
-      "getRoundFeed",
-      "getRoundFeed(address,address,uint80):(address)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(roundId)
-      ]
-    );
-
-    return result[0].toAddress();
-  }
-
-  try_getRoundFeed(
-    base: Address,
-    quote: Address,
-    roundId: BigInt
-  ): ethereum.CallResult<Address> {
-    let result = super.tryCall(
-      "getRoundFeed",
-      "getRoundFeed(address,address,uint80):(address)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(roundId)
-      ]
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(value[0].toAddress());
-  }
-
-  getTimestamp(base: Address, quote: Address, roundId: BigInt): BigInt {
-    let result = super.call(
-      "getTimestamp",
-      "getTimestamp(address,address,uint256):(uint256)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(roundId)
-      ]
-    );
-
-    return result[0].toBigInt();
-  }
-
-  try_getTimestamp(
-    base: Address,
-    quote: Address,
-    roundId: BigInt
-  ): ethereum.CallResult<BigInt> {
-    let result = super.tryCall(
-      "getTimestamp",
-      "getTimestamp(address,address,uint256):(uint256)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(roundId)
-      ]
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(value[0].toBigInt());
-  }
-
-  isFeedEnabled(aggregator: Address): boolean {
-    let result = super.call("isFeedEnabled", "isFeedEnabled(address):(bool)", [
-      ethereum.Value.fromAddress(aggregator)
+  getTimestamp(_roundId: BigInt): BigInt {
+    let result = super.call("getTimestamp", "getTimestamp(uint256):(uint256)", [
+      ethereum.Value.fromUnsignedBigInt(_roundId)
     ]);
 
-    return result[0].toBoolean();
-  }
-
-  try_isFeedEnabled(aggregator: Address): ethereum.CallResult<boolean> {
-    let result = super.tryCall(
-      "isFeedEnabled",
-      "isFeedEnabled(address):(bool)",
-      [ethereum.Value.fromAddress(aggregator)]
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(value[0].toBoolean());
-  }
-
-  latestAnswer(base: Address, quote: Address): BigInt {
-    let result = super.call(
-      "latestAnswer",
-      "latestAnswer(address,address):(int256)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
-    );
-
     return result[0].toBigInt();
   }
 
-  try_latestAnswer(base: Address, quote: Address): ethereum.CallResult<BigInt> {
+  try_getTimestamp(_roundId: BigInt): ethereum.CallResult<BigInt> {
     let result = super.tryCall(
-      "latestAnswer",
-      "latestAnswer(address,address):(int256)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
+      "getTimestamp",
+      "getTimestamp(uint256):(uint256)",
+      [ethereum.Value.fromUnsignedBigInt(_roundId)]
     );
     if (result.reverted) {
       return new ethereum.CallResult();
@@ -851,22 +386,14 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     return ethereum.CallResult.fromValue(value[0].toBigInt());
   }
 
-  latestRound(base: Address, quote: Address): BigInt {
-    let result = super.call(
-      "latestRound",
-      "latestRound(address,address):(uint256)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
-    );
+  latestAnswer(): BigInt {
+    let result = super.call("latestAnswer", "latestAnswer():(int256)", []);
 
     return result[0].toBigInt();
   }
 
-  try_latestRound(base: Address, quote: Address): ethereum.CallResult<BigInt> {
-    let result = super.tryCall(
-      "latestRound",
-      "latestRound(address,address):(uint256)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
-    );
+  try_latestAnswer(): ethereum.CallResult<BigInt> {
+    let result = super.tryCall("latestAnswer", "latestAnswer():(int256)", []);
     if (result.reverted) {
       return new ethereum.CallResult();
     }
@@ -874,14 +401,26 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     return ethereum.CallResult.fromValue(value[0].toBigInt());
   }
 
-  latestRoundData(
-    base: Address,
-    quote: Address
-  ): ChainlinkOracle__latestRoundDataResult {
+  latestRound(): BigInt {
+    let result = super.call("latestRound", "latestRound():(uint256)", []);
+
+    return result[0].toBigInt();
+  }
+
+  try_latestRound(): ethereum.CallResult<BigInt> {
+    let result = super.tryCall("latestRound", "latestRound():(uint256)", []);
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBigInt());
+  }
+
+  latestRoundData(): ChainlinkOracle__latestRoundDataResult {
     let result = super.call(
       "latestRoundData",
-      "latestRoundData(address,address):(uint80,int256,uint256,uint256,uint80)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
+      "latestRoundData():(uint80,int256,uint256,uint256,uint80)",
+      []
     );
 
     return new ChainlinkOracle__latestRoundDataResult(
@@ -893,14 +432,13 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     );
   }
 
-  try_latestRoundData(
-    base: Address,
-    quote: Address
-  ): ethereum.CallResult<ChainlinkOracle__latestRoundDataResult> {
+  try_latestRoundData(): ethereum.CallResult<
+    ChainlinkOracle__latestRoundDataResult
+  > {
     let result = super.tryCall(
       "latestRoundData",
-      "latestRoundData(address,address):(uint80,int256,uint256,uint256,uint80)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
+      "latestRoundData():(uint80,int256,uint256,uint256,uint80)",
+      []
     );
     if (result.reverted) {
       return new ethereum.CallResult();
@@ -917,24 +455,21 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     );
   }
 
-  latestTimestamp(base: Address, quote: Address): BigInt {
+  latestTimestamp(): BigInt {
     let result = super.call(
       "latestTimestamp",
-      "latestTimestamp(address,address):(uint256)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
+      "latestTimestamp():(uint256)",
+      []
     );
 
     return result[0].toBigInt();
   }
 
-  try_latestTimestamp(
-    base: Address,
-    quote: Address
-  ): ethereum.CallResult<BigInt> {
+  try_latestTimestamp(): ethereum.CallResult<BigInt> {
     let result = super.tryCall(
       "latestTimestamp",
-      "latestTimestamp(address,address):(uint256)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
+      "latestTimestamp():(uint256)",
+      []
     );
     if (result.reverted) {
       return new ethereum.CallResult();
@@ -958,19 +493,74 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     return ethereum.CallResult.fromValue(value[0].toAddress());
   }
 
+  phaseAggregators(param0: i32): Address {
+    let result = super.call(
+      "phaseAggregators",
+      "phaseAggregators(uint16):(address)",
+      [ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(param0))]
+    );
+
+    return result[0].toAddress();
+  }
+
+  try_phaseAggregators(param0: i32): ethereum.CallResult<Address> {
+    let result = super.tryCall(
+      "phaseAggregators",
+      "phaseAggregators(uint16):(address)",
+      [ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(param0))]
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toAddress());
+  }
+
+  phaseId(): i32 {
+    let result = super.call("phaseId", "phaseId():(uint16)", []);
+
+    return result[0].toI32();
+  }
+
+  try_phaseId(): ethereum.CallResult<i32> {
+    let result = super.tryCall("phaseId", "phaseId():(uint16)", []);
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toI32());
+  }
+
+  proposedAggregator(): Address {
+    let result = super.call(
+      "proposedAggregator",
+      "proposedAggregator():(address)",
+      []
+    );
+
+    return result[0].toAddress();
+  }
+
+  try_proposedAggregator(): ethereum.CallResult<Address> {
+    let result = super.tryCall(
+      "proposedAggregator",
+      "proposedAggregator():(address)",
+      []
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toAddress());
+  }
+
   proposedGetRoundData(
-    base: Address,
-    quote: Address,
-    roundId: BigInt
+    _roundId: BigInt
   ): ChainlinkOracle__proposedGetRoundDataResult {
     let result = super.call(
       "proposedGetRoundData",
-      "proposedGetRoundData(address,address,uint80):(uint80,int256,uint256,uint256,uint80)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(roundId)
-      ]
+      "proposedGetRoundData(uint80):(uint80,int256,uint256,uint256,uint80)",
+      [ethereum.Value.fromUnsignedBigInt(_roundId)]
     );
 
     return new ChainlinkOracle__proposedGetRoundDataResult(
@@ -983,18 +573,12 @@ export class ChainlinkOracle extends ethereum.SmartContract {
   }
 
   try_proposedGetRoundData(
-    base: Address,
-    quote: Address,
-    roundId: BigInt
+    _roundId: BigInt
   ): ethereum.CallResult<ChainlinkOracle__proposedGetRoundDataResult> {
     let result = super.tryCall(
       "proposedGetRoundData",
-      "proposedGetRoundData(address,address,uint80):(uint80,int256,uint256,uint256,uint80)",
-      [
-        ethereum.Value.fromAddress(base),
-        ethereum.Value.fromAddress(quote),
-        ethereum.Value.fromUnsignedBigInt(roundId)
-      ]
+      "proposedGetRoundData(uint80):(uint80,int256,uint256,uint256,uint80)",
+      [ethereum.Value.fromUnsignedBigInt(_roundId)]
     );
     if (result.reverted) {
       return new ethereum.CallResult();
@@ -1011,14 +595,11 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     );
   }
 
-  proposedLatestRoundData(
-    base: Address,
-    quote: Address
-  ): ChainlinkOracle__proposedLatestRoundDataResult {
+  proposedLatestRoundData(): ChainlinkOracle__proposedLatestRoundDataResult {
     let result = super.call(
       "proposedLatestRoundData",
-      "proposedLatestRoundData(address,address):(uint80,int256,uint256,uint256,uint80)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
+      "proposedLatestRoundData():(uint80,int256,uint256,uint256,uint80)",
+      []
     );
 
     return new ChainlinkOracle__proposedLatestRoundDataResult(
@@ -1030,14 +611,13 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     );
   }
 
-  try_proposedLatestRoundData(
-    base: Address,
-    quote: Address
-  ): ethereum.CallResult<ChainlinkOracle__proposedLatestRoundDataResult> {
+  try_proposedLatestRoundData(): ethereum.CallResult<
+    ChainlinkOracle__proposedLatestRoundDataResult
+  > {
     let result = super.tryCall(
       "proposedLatestRoundData",
-      "proposedLatestRoundData(address,address):(uint80,int256,uint256,uint256,uint80)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
+      "proposedLatestRoundData():(uint80,int256,uint256,uint256,uint80)",
+      []
     );
     if (result.reverted) {
       return new ethereum.CallResult();
@@ -1054,45 +634,53 @@ export class ChainlinkOracle extends ethereum.SmartContract {
     );
   }
 
-  typeAndVersion(): string {
-    let result = super.call("typeAndVersion", "typeAndVersion():(string)", []);
-
-    return result[0].toString();
-  }
-
-  try_typeAndVersion(): ethereum.CallResult<string> {
-    let result = super.tryCall(
-      "typeAndVersion",
-      "typeAndVersion():(string)",
-      []
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(value[0].toString());
-  }
-
-  version(base: Address, quote: Address): BigInt {
-    let result = super.call("version", "version(address,address):(uint256)", [
-      ethereum.Value.fromAddress(base),
-      ethereum.Value.fromAddress(quote)
-    ]);
+  version(): BigInt {
+    let result = super.call("version", "version():(uint256)", []);
 
     return result[0].toBigInt();
   }
 
-  try_version(base: Address, quote: Address): ethereum.CallResult<BigInt> {
-    let result = super.tryCall(
-      "version",
-      "version(address,address):(uint256)",
-      [ethereum.Value.fromAddress(base), ethereum.Value.fromAddress(quote)]
-    );
+  try_version(): ethereum.CallResult<BigInt> {
+    let result = super.tryCall("version", "version():(uint256)", []);
     if (result.reverted) {
       return new ethereum.CallResult();
     }
     let value = result.value;
     return ethereum.CallResult.fromValue(value[0].toBigInt());
+  }
+}
+
+export class ConstructorCall extends ethereum.Call {
+  get inputs(): ConstructorCall__Inputs {
+    return new ConstructorCall__Inputs(this);
+  }
+
+  get outputs(): ConstructorCall__Outputs {
+    return new ConstructorCall__Outputs(this);
+  }
+}
+
+export class ConstructorCall__Inputs {
+  _call: ConstructorCall;
+
+  constructor(call: ConstructorCall) {
+    this._call = call;
+  }
+
+  get _aggregator(): Address {
+    return this._call.inputValues[0].value.toAddress();
+  }
+
+  get _accessController(): Address {
+    return this._call.inputValues[1].value.toAddress();
+  }
+}
+
+export class ConstructorCall__Outputs {
+  _call: ConstructorCall;
+
+  constructor(call: ConstructorCall) {
+    this._call = call;
   }
 }
 
@@ -1122,96 +710,80 @@ export class AcceptOwnershipCall__Outputs {
   }
 }
 
-export class ConfirmFeedCall extends ethereum.Call {
-  get inputs(): ConfirmFeedCall__Inputs {
-    return new ConfirmFeedCall__Inputs(this);
+export class ConfirmAggregatorCall extends ethereum.Call {
+  get inputs(): ConfirmAggregatorCall__Inputs {
+    return new ConfirmAggregatorCall__Inputs(this);
   }
 
-  get outputs(): ConfirmFeedCall__Outputs {
-    return new ConfirmFeedCall__Outputs(this);
+  get outputs(): ConfirmAggregatorCall__Outputs {
+    return new ConfirmAggregatorCall__Outputs(this);
   }
 }
 
-export class ConfirmFeedCall__Inputs {
-  _call: ConfirmFeedCall;
+export class ConfirmAggregatorCall__Inputs {
+  _call: ConfirmAggregatorCall;
 
-  constructor(call: ConfirmFeedCall) {
+  constructor(call: ConfirmAggregatorCall) {
     this._call = call;
   }
 
-  get base(): Address {
+  get _aggregator(): Address {
     return this._call.inputValues[0].value.toAddress();
   }
-
-  get quote(): Address {
-    return this._call.inputValues[1].value.toAddress();
-  }
-
-  get aggregator(): Address {
-    return this._call.inputValues[2].value.toAddress();
-  }
 }
 
-export class ConfirmFeedCall__Outputs {
-  _call: ConfirmFeedCall;
+export class ConfirmAggregatorCall__Outputs {
+  _call: ConfirmAggregatorCall;
 
-  constructor(call: ConfirmFeedCall) {
+  constructor(call: ConfirmAggregatorCall) {
     this._call = call;
   }
 }
 
-export class ProposeFeedCall extends ethereum.Call {
-  get inputs(): ProposeFeedCall__Inputs {
-    return new ProposeFeedCall__Inputs(this);
+export class ProposeAggregatorCall extends ethereum.Call {
+  get inputs(): ProposeAggregatorCall__Inputs {
+    return new ProposeAggregatorCall__Inputs(this);
   }
 
-  get outputs(): ProposeFeedCall__Outputs {
-    return new ProposeFeedCall__Outputs(this);
+  get outputs(): ProposeAggregatorCall__Outputs {
+    return new ProposeAggregatorCall__Outputs(this);
   }
 }
 
-export class ProposeFeedCall__Inputs {
-  _call: ProposeFeedCall;
+export class ProposeAggregatorCall__Inputs {
+  _call: ProposeAggregatorCall;
 
-  constructor(call: ProposeFeedCall) {
+  constructor(call: ProposeAggregatorCall) {
     this._call = call;
   }
 
-  get base(): Address {
+  get _aggregator(): Address {
     return this._call.inputValues[0].value.toAddress();
   }
-
-  get quote(): Address {
-    return this._call.inputValues[1].value.toAddress();
-  }
-
-  get aggregator(): Address {
-    return this._call.inputValues[2].value.toAddress();
-  }
 }
 
-export class ProposeFeedCall__Outputs {
-  _call: ProposeFeedCall;
+export class ProposeAggregatorCall__Outputs {
+  _call: ProposeAggregatorCall;
 
-  constructor(call: ProposeFeedCall) {
+  constructor(call: ProposeAggregatorCall) {
     this._call = call;
   }
 }
 
-export class SetAccessControllerCall extends ethereum.Call {
-  get inputs(): SetAccessControllerCall__Inputs {
-    return new SetAccessControllerCall__Inputs(this);
+export class SetControllerCall extends ethereum.Call {
+  get inputs(): SetControllerCall__Inputs {
+    return new SetControllerCall__Inputs(this);
   }
 
-  get outputs(): SetAccessControllerCall__Outputs {
-    return new SetAccessControllerCall__Outputs(this);
+  get outputs(): SetControllerCall__Outputs {
+    return new SetControllerCall__Outputs(this);
   }
 }
 
-export class SetAccessControllerCall__Inputs {
-  _call: SetAccessControllerCall;
+export class SetControllerCall__Inputs {
+  _call: SetControllerCall;
 
-  constructor(call: SetAccessControllerCall) {
+  constructor(call: SetControllerCall) {
     this._call = call;
   }
 
@@ -1220,10 +792,10 @@ export class SetAccessControllerCall__Inputs {
   }
 }
 
-export class SetAccessControllerCall__Outputs {
-  _call: SetAccessControllerCall;
+export class SetControllerCall__Outputs {
+  _call: SetControllerCall;
 
-  constructor(call: SetAccessControllerCall) {
+  constructor(call: SetControllerCall) {
     this._call = call;
   }
 }
@@ -1245,7 +817,7 @@ export class TransferOwnershipCall__Inputs {
     this._call = call;
   }
 
-  get to(): Address {
+  get _to(): Address {
     return this._call.inputValues[0].value.toAddress();
   }
 }

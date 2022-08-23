@@ -5,7 +5,7 @@ import {
   UniswapPair as UniswapPairContract,
   UniswapPair__getReservesResult,
 } from "../../../generated/templates/Pair/UniswapPair";
-
+import { UniswapFeeRouter as UniswapFeeRouterContract } from "../../../generated/templates/Pair/UniswapFeeRouter";
 import { Address, BigInt, ethereum } from "@graphprotocol/graph-ts";
 import { UniswapRouter as UniswapRouterContract } from "../../../generated/templates/Pair/UniswapRouter";
 
@@ -16,7 +16,7 @@ export function isLpToken(tokenAddress: Address, network: string): bool {
     return false;
   }
 
-  const lpToken = UniswapRouterContract.bind(tokenAddress);
+  const lpToken = UniswapPairContract.bind(tokenAddress);
   let isFactoryAvailable = utils.readValue(
     lpToken.try_factory(),
     constants.ZERO_ADDRESS
@@ -42,6 +42,16 @@ export function getPriceFromRouterUsdc(
   tokenAddress: Address,
   network: string
 ): CustomPriceType {
+  if (
+    tokenAddress == constants.WHITELIST_TOKENS_MAP.get(network)!.get("USDC")!
+  ) {
+    return CustomPriceType.initialize(
+      constants.BIGINT_TEN.pow(
+        constants.DEFAULT_USDC_DECIMALS as u8
+      ).toBigDecimal(),
+      constants.DEFAULT_USDC_DECIMALS
+    );
+  }
   return getPriceFromRouter(
     tokenAddress,
     constants.WHITELIST_TOKENS_MAP.get(network)!.get("USDC")!,
@@ -86,23 +96,41 @@ export function getPriceFromRouter(
   }
 
   let token0Decimals = utils.getTokenDecimals(token0Address);
-  let amountIn = BigInt.fromI32(10).pow(token0Decimals.toI32() as u8);
+  let amountIn = constants.BIGINT_TEN.pow(token0Decimals.toI32() as u8);
 
-  let routerAddressV1 =
-    constants.UNISWAP_ROUTER_CONTRACT_ADDRESSES.get(network)!.get("routerV1");
-  let routerAddressV2 =
-    constants.UNISWAP_ROUTER_CONTRACT_ADDRESSES.get(network)!.get("routerV2");
+  let routerAddressV1 = constants.UNISWAP_ROUTER_CONTRACT_ADDRESSES.get(
+    network
+  )!.get("routerV1");
+  let routerAddressV2 = constants.UNISWAP_ROUTER_CONTRACT_ADDRESSES.get(
+    network
+  )!.get("routerV2");
 
   let amountOutArray: ethereum.CallResult<BigInt[]>;
   if (routerAddressV1) {
     const uniswapRouterV1 = UniswapRouterContract.bind(routerAddressV1);
     amountOutArray = uniswapRouterV1.try_getAmountsOut(amountIn, path);
-    if (amountOutArray.reverted && routerAddressV2) {
-      const uniswapRouterV2 = UniswapRouterContract.bind(routerAddressV2);
-      amountOutArray = uniswapRouterV2.try_getAmountsOut(amountIn, path);
-
+    if (amountOutArray.reverted) {
+      const uniswapFeeRouter = UniswapFeeRouterContract.bind(routerAddressV1);
+      amountOutArray = uniswapFeeRouter.try_getAmountsOut(
+        amountIn,
+        path,
+        BigInt.fromI32(3000)
+      );
       if (amountOutArray.reverted) {
-        return new CustomPriceType();
+        const uniswapFeeRouter = UniswapFeeRouterContract.bind(routerAddressV1);
+        amountOutArray = uniswapFeeRouter.try_getAmountsOut(
+          amountIn,
+          path,
+          BigInt.fromI32(500)
+        );
+        if (amountOutArray.reverted && routerAddressV2) {
+          const uniswapRouterV2 = UniswapRouterContract.bind(routerAddressV2);
+          amountOutArray = uniswapRouterV2.try_getAmountsOut(amountIn, path);
+
+          if (amountOutArray.reverted) {
+            return new CustomPriceType();
+          }
+        }
       }
     }
 

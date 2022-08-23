@@ -1,6 +1,8 @@
 import { Address, TypedMap } from "@graphprotocol/graph-ts";
 
 export const NETWORK_STRING = "fantom";
+export const NETWORK_CHAIN_ID = 250;
+export const NETWORK_SUFFIX = "-" + NETWORK_CHAIN_ID.toString();
 
 ///////////////////////////////////////////////////////////////////////////
 ///////////////////////////// CURVE CONTRACT //////////////////////////////
@@ -48,15 +50,16 @@ SPOOKY_SWAP_ROUTER_ADDRESS.set(
 );
 SPOOKY_SWAP_ROUTER_ADDRESS.set(
   "routerV2",
-  Address.fromString("0x0000000000000000000000000000000000000000")
+  Address.fromString("0x16327E3FbDaCA3bcF7E38F5Af2599D2DDc33aE52") //spiritswap
 );
 
 ///////////////////////////////////////////////////////////////////////////
 ///////////////////////////// YEARNLENS CONTRACT //////////////////////////
 ///////////////////////////////////////////////////////////////////////////
 
-export const YEARN_LENS_CONTRACT_ADDRESS =
-  "0x0000000000000000000000000000000000000000";
+export const YEARN_LENS_CONTRACT_ADDRESS = Address.fromString(
+  "0x0000000000000000000000000000000000000000"
+);
 
 ///////////////////////////////////////////////////////////////////////////
 ///////////////////////////// CHAINLINK CONTRACT //////////////////////////
@@ -73,7 +76,7 @@ export const CHAIN_LINK_CONTRACT_ADDRESS = Address.fromString(
 export const WHITELIST_TOKENS = new TypedMap<string, Address>();
 WHITELIST_TOKENS.set(
   "WETH",
-  Address.fromString("0x658b0c7613e890ee50b8c4bc6a3f41ef411208ad") // fETH
+  Address.fromString("0x21be370d5312f44cb42ce377bc9b8a0cef1a4c83") // wFTM
 );
 WHITELIST_TOKENS.set(
   "ETH",

@@ -1,4 +1,4 @@
-import { BigInt, BigDecimal, dataSource } from "@graphprotocol/graph-ts";
+import { BigInt, BigDecimal, dataSource, log } from "@graphprotocol/graph-ts";
 import {
   AirDEXPool,
   AirTokenTransfer,
@@ -23,7 +23,7 @@ import {
   getOrCreateAirEntityDailyChangeStats,
   getOrCreateAirToken,
   isAirDailyAggregateEntityAccountAvailable,
-  updateAirDailyAggregateEntityDailyChangePercentage,
+  // updateAirDailyAggregateEntityDailyChangePercentage,
 } from "./common";
 
 import {
@@ -75,6 +75,7 @@ export namespace dex {
 
     const lpTokenNameArray: Array<string> = [];
     const inputTokenIds: Array<string> = [];
+    const inputBalances: Array<BigInt> = [];
     for (let index = 0; index < inputTokens.length; index++) {
       const inputTokenAddress = inputTokens[index];
       const token = getOrCreateAirToken(inputTokenAddress);
@@ -83,6 +84,7 @@ export namespace dex {
       if (token.name) {
         lpTokenNameArray.push(token.name!);
       }
+      inputBalances.push(BIGINT.ZERO);
     }
 
     let lpTokenAddress = poolAddress;
@@ -98,6 +100,7 @@ export namespace dex {
 
     dexPool.inputToken = inputTokenIds;
     dexPool.outputToken = lpToken.id;
+    dexPool.tokenBalances = inputBalances;
     dexPool.fee = fee;
 
     let weightage: Array<BigDecimal> = [];
@@ -120,8 +123,18 @@ export namespace dex {
     from: string,
     to: string,
     hash: string,
-    timestamp: BigInt
+    logIndex: BigInt,
+    timestamp: BigInt,
+    blockNumber: BigInt
   ): void {
+    // log.info("addLiquidity: {}, {}, {}, {}, {}, {}", [
+    //   poolAddress,
+    //   from,
+    //   to,
+    //   hash,
+    //   logIndex.toString(),
+    //   timestamp.toString(),
+    // ]);
     const dexPool = getOrCreateAirDexPool(poolAddress);
     const inputTokenTransfers: Array<AirTokenTransfer> = [];
     if (dexPool.inputToken.length > 0) {
@@ -136,7 +149,8 @@ export namespace dex {
           to,
           inputAmounts[index],
           dexPool.fee,
-          hash
+          hash,
+          logIndex
         );
         inputTokenTransfers.push(tokenTransfer);
       }
@@ -150,7 +164,8 @@ export namespace dex {
       from,
       BIGINT.ONE,
       BIGINT.ZERO,
-      hash
+      hash,
+      logIndex
     );
 
     _addLiquidity(
@@ -158,7 +173,9 @@ export namespace dex {
       inputTokenTransfers,
       outputTokenTransfer,
       timestamp,
-      hash
+      hash,
+      logIndex,
+      blockNumber
     );
   }
 
@@ -200,15 +217,28 @@ export namespace dex {
     inputTokenTransfer: Array<AirTokenTransfer>,
     outputTokenTransfer: AirTokenTransfer,
     timestamp: BigInt,
-    hash: string
+    hash: string,
+    logIndex: BigInt,
+    blockNumber: BigInt
   ): void {
     const aggregateEntity = getOrCreateAirDailyAggregateEntity(
+      blockNumber,
       dexPool.poolAddress,
       AirProtocolType.EXCHANGE,
       AirProtocolActionType.ADD_LIQUIDITY,
-      timestamp
+      timestamp,
+      ""
     );
-    aggregateEntity.tokenCount = aggregateEntity.tokenCount.plus(BIGINT.ONE);
+
+    let totalTokensAdded = BIGINT.ZERO;
+    for (let index = 0; index < inputTokenTransfer.length; index++) {
+      const tokenTransfer = inputTokenTransfer[index];
+      totalTokensAdded = totalTokensAdded.plus(tokenTransfer.amount);
+    }
+
+    aggregateEntity.tokenCount = aggregateEntity.tokenCount.plus(
+      totalTokensAdded
+    );
     aggregateEntity.transactionCount = aggregateEntity.transactionCount.plus(
       BIGINT.ONE
     );
@@ -259,8 +289,10 @@ export namespace dex {
         dexPool.id,
         statsId,
         token.address,
+        iTokenTransfer.amount,
         priceInUsd,
-        aggregateEntity.daySinceEpoch
+        aggregateEntity.daySinceEpoch,
+        !isAccountAlreadyAdded
       );
     }
 
@@ -276,30 +308,34 @@ export namespace dex {
       dexPool.id,
       statsId,
       outputTokenTransfer.token,
-      aggregateEntity.daySinceEpoch
+      BIGINT.ONE,
+      aggregateEntity.daySinceEpoch,
+      !isAccountAlreadyAdded
     );
     updateAirLiquidityPoolTransaction(
       dexPool,
       statsId,
       inputTokenTransfer,
       outputTokenTransfer,
-      hash
+      hash,
+      logIndex
     );
 
-    const prevAggregateEntity = getOrCreateAirDailyAggregateEntity(
-      dexPool.poolAddress,
-      AirProtocolType.EXCHANGE,
-      AirProtocolActionType.ADD_LIQUIDITY,
-      timestamp,
-      aggregateEntity.daySinceEpoch.minus(BIGINT.ONE)
-    );
+    // const prevAggregateEntity = getOrCreateAirDailyAggregateEntity(
+    //   dexPool.poolAddress,
+    //   AirProtocolType.EXCHANGE,
+    //   AirProtocolActionType.ADD_LIQUIDITY,
+    //   timestamp,
+    //   "",
+    //   aggregateEntity.daySinceEpoch.minus(BIGINT.ONE)
+    // );
 
-    updateDailyChangePercentage(
-      dexPool.poolAddress,
-      aggregateEntity,
-      prevAggregateEntity,
-      AirProtocolActionType.ADD_LIQUIDITY
-    );
+    // updateDailyChangePercentage(
+    //   dexPool.poolAddress,
+    //   aggregateEntity,
+    //   prevAggregateEntity,
+    //   AirProtocolActionType.ADD_LIQUIDITY
+    // );
   }
 
   function getOrCreateAirTokenTransfer(
@@ -308,11 +344,14 @@ export namespace dex {
     to: string,
     amount: BigInt,
     fee: BigInt,
-    hash: string
+    hash: string,
+    logIndex: BigInt
   ): AirTokenTransfer {
     const entityId = dataSource
       .network()
       .concat(hash)
+      .concat("-")
+      .concat(logIndex.toString())
       .concat("-")
       .concat(to)
       .concat("-")
@@ -383,8 +422,10 @@ export namespace dex {
     dexPoolId: string,
     statsId: string,
     inputTokenAddress: string,
+    tokenAmount: BigInt,
     usdVolume: BigDecimal,
-    daySinceEpoch: BigInt
+    daySinceEpoch: BigInt,
+    shouldAddWalletCount: bool
   ): void {
     const entityId = getAirTokenStatsId(
       dexPoolId,
@@ -398,8 +439,11 @@ export namespace dex {
     tokenStats.liquidityPoolStatsRef = statsId;
     const inputToken = getOrCreateAirToken(inputTokenAddress);
     tokenStats.token = inputToken.id;
-    tokenStats.walletCount = tokenStats.walletCount.plus(BIGINT.ONE);
-    tokenStats.transactionCount = tokenStats.walletCount.plus(BIGINT.ONE);
+    tokenStats.tokenCount = tokenStats.tokenCount.plus(tokenAmount);
+    if (shouldAddWalletCount) {
+      tokenStats.walletCount = tokenStats.walletCount.plus(BIGINT.ONE);
+    }
+    tokenStats.transactionCount = tokenStats.transactionCount.plus(BIGINT.ONE);
     tokenStats.volumeInUSD = tokenStats.volumeInUSD.plus(usdVolume);
 
     tokenStats.save();
@@ -449,7 +493,9 @@ export namespace dex {
     dexPoolId: string,
     statsId: string,
     outputTokenAddress: string,
-    daySinceEpoch: BigInt
+    tokenAmount: BigInt,
+    daySinceEpoch: BigInt,
+    shouldAddWalletCount: bool
   ): void {
     const entityId = getAirTokenStatsId(
       dexPoolId,
@@ -463,8 +509,12 @@ export namespace dex {
     tokenStats.liquidityPoolStatsRef = statsId;
     const outputToken = getOrCreateAirToken(outputTokenAddress);
     tokenStats.token = outputToken.id;
-    tokenStats.walletCount = tokenStats.walletCount.plus(BIGINT.ONE);
-    tokenStats.transactionCount = tokenStats.walletCount.plus(BIGINT.ONE);
+    tokenStats.tokenCount = tokenStats.tokenCount.plus(tokenAmount);
+    if (shouldAddWalletCount) {
+      tokenStats.walletCount = tokenStats.walletCount.plus(BIGINT.ONE);
+    }
+
+    tokenStats.transactionCount = tokenStats.transactionCount.plus(BIGINT.ONE);
     tokenStats.save();
   }
 
@@ -473,9 +523,14 @@ export namespace dex {
     statsId: string,
     inputTokenTransfer: Array<AirTokenTransfer>,
     outputTokenTransfer: AirTokenTransfer,
-    hash: string
+    hash: string,
+    logIndex: BigInt
   ): void {
-    const entityId = statsId.concat("-").concat(hash);
+    const entityId = statsId
+      .concat("-")
+      .concat(hash)
+      .concat("-")
+      .concat(logIndex.toString());
 
     let lpTransaction = AirLiquidityPoolTransaction.load(entityId);
     if (lpTransaction === null) {
@@ -495,184 +550,184 @@ export namespace dex {
     }
   }
 
-  function updateDailyChangePercentage(
-    poolAddress: string,
-    aggregateEntity: AirDailyAggregateEntity,
-    prevAggregateEntity: AirDailyAggregateEntity,
-    actionType: string
-  ): void {
-    updateAirDailyAggregateEntityDailyChangePercentage(
-      aggregateEntity,
-      prevAggregateEntity
-    );
+  // function updateDailyChangePercentage(
+  //   poolAddress: string,
+  //   aggregateEntity: AirDailyAggregateEntity,
+  //   prevAggregateEntity: AirDailyAggregateEntity,
+  //   actionType: string
+  // ): void {
+  //   updateAirDailyAggregateEntityDailyChangePercentage(
+  //     aggregateEntity,
+  //     prevAggregateEntity
+  //   );
 
-    if (actionType === AirProtocolActionType.ADD_LIQUIDITY) {
-      updateAirLiquidityPoolStatsDailyChangePercentage(
-        aggregateEntity.stats,
-        prevAggregateEntity.stats
-      );
+  //   if (actionType === AirProtocolActionType.ADD_LIQUIDITY) {
+  //     updateAirLiquidityPoolStatsDailyChangePercentage(
+  //       aggregateEntity.stats,
+  //       prevAggregateEntity.stats
+  //     );
 
-      updateAirLiquidityPoolTokenStatsDailyChangePercentage(
-        poolAddress,
-        aggregateEntity.daySinceEpoch
-      );
-    } else if (actionType === AirProtocolActionType.SWAP) {
-      updateAirSwapStatsDailyChangePercentage(
-        aggregateEntity.stats,
-        prevAggregateEntity.stats
-      );
-    }
-  }
+  //     updateAirLiquidityPoolTokenStatsDailyChangePercentage(
+  //       poolAddress,
+  //       aggregateEntity.daySinceEpoch
+  //     );
+  //   } else if (actionType === AirProtocolActionType.SWAP) {
+  //     updateAirSwapStatsDailyChangePercentage(
+  //       aggregateEntity.stats,
+  //       prevAggregateEntity.stats
+  //     );
+  //   }
+  // }
 
-  function updateAirLiquidityPoolStatsDailyChangePercentage(
-    currentEntityId: string,
-    prevEntityId: string
-  ): void {
-    const currentEntity = getOrCreateAirLiquidityPoolStats(currentEntityId);
-    const prevEntity = getOrCreateAirLiquidityPoolStats(prevEntityId);
+  // function updateAirLiquidityPoolStatsDailyChangePercentage(
+  //   currentEntityId: string,
+  //   prevEntityId: string
+  // ): void {
+  //   const currentEntity = getOrCreateAirLiquidityPoolStats(currentEntityId);
+  //   const prevEntity = getOrCreateAirLiquidityPoolStats(prevEntityId);
 
-    const dailyChangeStats = getOrCreateAirEntityDailyChangeStats(
-      currentEntity.id
-    );
+  //   const dailyChangeStats = getOrCreateAirEntityDailyChangeStats(
+  //     currentEntity.id
+  //   );
 
-    dailyChangeStats.walletCountChangeInPercentage = calculatePercentage(
-      currentEntity.walletCount.toBigDecimal(),
-      prevEntity.walletCount.toBigDecimal()
-    );
-    dailyChangeStats.tokenCountChangeInPercentage = calculatePercentage(
-      currentEntity.tokenCount.toBigDecimal(),
-      prevEntity.tokenCount.toBigDecimal()
-    );
-    dailyChangeStats.transactionCountChangeInPercentage = calculatePercentage(
-      currentEntity.transactionCount.toBigDecimal(),
-      prevEntity.transactionCount.toBigDecimal()
-    );
-    dailyChangeStats.volumeInUSDChangeInPercentage = calculatePercentage(
-      currentEntity.volumeInUSD,
-      prevEntity.volumeInUSD
-    );
+  //   dailyChangeStats.walletCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.walletCount.toBigDecimal(),
+  //     prevEntity.walletCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.tokenCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.tokenCount.toBigDecimal(),
+  //     prevEntity.tokenCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.transactionCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.transactionCount.toBigDecimal(),
+  //     prevEntity.transactionCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.volumeInUSDChangeInPercentage = calculatePercentage(
+  //     currentEntity.volumeInUSD,
+  //     prevEntity.volumeInUSD
+  //   );
 
-    dailyChangeStats.save();
-  }
+  //   dailyChangeStats.save();
+  // }
 
-  function updateAirLiquidityPoolTokenStatsDailyChangePercentage(
-    poolAddress: string,
-    currentDaySinceEpoch: BigInt
-  ): void {
-    const dexPool = getOrCreateAirDexPool(poolAddress);
+  // function updateAirLiquidityPoolTokenStatsDailyChangePercentage(
+  //   poolAddress: string,
+  //   currentDaySinceEpoch: BigInt
+  // ): void {
+  //   const dexPool = getOrCreateAirDexPool(poolAddress);
 
-    if (dexPool.inputToken.length > 0) {
-      for (let index = 0; index < dexPool.inputToken.length; index++) {
-        const tokenAddress = dexPool.inputToken[index];
-        const currentEntityId = getAirTokenStatsId(
-          dexPool.id,
-          AirProtocolActionType.ADD_LIQUIDITY,
-          tokenAddress,
-          currentDaySinceEpoch,
-          IN
-        );
-        const prevEntityId = getAirTokenStatsId(
-          dexPool.id,
-          AirProtocolActionType.ADD_LIQUIDITY,
-          tokenAddress,
-          currentDaySinceEpoch.minus(BIGINT.ONE),
-          IN
-        );
+  //   if (dexPool.inputToken.length > 0) {
+  //     for (let index = 0; index < dexPool.inputToken.length; index++) {
+  //       const tokenAddress = dexPool.inputToken[index];
+  //       const currentEntityId = getAirTokenStatsId(
+  //         dexPool.id,
+  //         AirProtocolActionType.ADD_LIQUIDITY,
+  //         tokenAddress,
+  //         currentDaySinceEpoch,
+  //         IN
+  //       );
+  //       const prevEntityId = getAirTokenStatsId(
+  //         dexPool.id,
+  //         AirProtocolActionType.ADD_LIQUIDITY,
+  //         tokenAddress,
+  //         currentDaySinceEpoch.minus(BIGINT.ONE),
+  //         IN
+  //       );
 
-        updateAirLiquidityPoolInputTokenStatsDailyChangePercentage(
-          currentEntityId,
-          prevEntityId
-        );
-      }
+  //       updateAirLiquidityPoolInputTokenStatsDailyChangePercentage(
+  //         currentEntityId,
+  //         prevEntityId
+  //       );
+  //     }
 
-      const outputTokenAddress = dexPool.outputToken;
-      const currentEntityId = getAirTokenStatsId(
-        dexPool.id,
-        AirProtocolActionType.ADD_LIQUIDITY,
-        outputTokenAddress,
-        currentDaySinceEpoch,
-        OUT
-      );
-      const prevEntityId = getAirTokenStatsId(
-        dexPool.id,
-        AirProtocolActionType.ADD_LIQUIDITY,
-        outputTokenAddress,
-        currentDaySinceEpoch.minus(BIGINT.ONE),
-        OUT
-      );
+  //     // const outputTokenAddress = dexPool.outputToken;
+  //     // const currentEntityId = getAirTokenStatsId(
+  //     //   dexPool.id,
+  //     //   AirProtocolActionType.ADD_LIQUIDITY,
+  //     //   outputTokenAddress,
+  //     //   currentDaySinceEpoch,
+  //     //   OUT
+  //     // );
+  //     // const prevEntityId = getAirTokenStatsId(
+  //     //   dexPool.id,
+  //     //   AirProtocolActionType.ADD_LIQUIDITY,
+  //     //   outputTokenAddress,
+  //     //   currentDaySinceEpoch.minus(BIGINT.ONE),
+  //     //   OUT
+  //     // );
 
-      updateAirLiquidityPoolOutputTokenStatsDailyChangePercentage(
-        currentEntityId,
-        prevEntityId
-      );
-    }
-  }
+  //     // updateAirLiquidityPoolOutputTokenStatsDailyChangePercentage(
+  //     //   currentEntityId,
+  //     //   prevEntityId
+  //     // );
+  //   }
+  // }
 
-  function updateAirLiquidityPoolInputTokenStatsDailyChangePercentage(
-    currentEntityId: string,
-    prevEntityId: string
-  ): void {
-    const currentEntity = getOrCreateAirLiquidityPoolInputTokenStats(
-      currentEntityId
-    );
-    const prevEntity = getOrCreateAirLiquidityPoolInputTokenStats(prevEntityId);
-    const dailyChangeStats = getOrCreateAirEntityDailyChangeStats(
-      currentEntity.id
-    );
+  // function updateAirLiquidityPoolInputTokenStatsDailyChangePercentage(
+  //   currentEntityId: string,
+  //   prevEntityId: string
+  // ): void {
+  //   const currentEntity = getOrCreateAirLiquidityPoolInputTokenStats(
+  //     currentEntityId
+  //   );
+  //   const prevEntity = getOrCreateAirLiquidityPoolInputTokenStats(prevEntityId);
+  //   const dailyChangeStats = getOrCreateAirEntityDailyChangeStats(
+  //     currentEntity.id
+  //   );
 
-    dailyChangeStats.walletCountChangeInPercentage = calculatePercentage(
-      currentEntity.walletCount.toBigDecimal(),
-      prevEntity.walletCount.toBigDecimal()
-    );
-    dailyChangeStats.tokenCountChangeInPercentage = calculatePercentage(
-      currentEntity.tokenCount.toBigDecimal(),
-      prevEntity.tokenCount.toBigDecimal()
-    );
-    dailyChangeStats.transactionCountChangeInPercentage = calculatePercentage(
-      currentEntity.transactionCount.toBigDecimal(),
-      prevEntity.transactionCount.toBigDecimal()
-    );
-    dailyChangeStats.volumeInUSDChangeInPercentage = calculatePercentage(
-      currentEntity.volumeInUSD,
-      prevEntity.volumeInUSD
-    );
+  //   dailyChangeStats.walletCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.walletCount.toBigDecimal(),
+  //     prevEntity.walletCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.tokenCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.tokenCount.toBigDecimal(),
+  //     prevEntity.tokenCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.transactionCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.transactionCount.toBigDecimal(),
+  //     prevEntity.transactionCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.volumeInUSDChangeInPercentage = calculatePercentage(
+  //     currentEntity.volumeInUSD,
+  //     prevEntity.volumeInUSD
+  //   );
 
-    dailyChangeStats.save();
-  }
+  //   dailyChangeStats.save();
+  // }
 
-  function updateAirLiquidityPoolOutputTokenStatsDailyChangePercentage(
-    currentEntityId: string,
-    prevEntityId: string
-  ): void {
-    const currentEntity = getOrCreateAirLiquidityPoolOutputTokenStats(
-      currentEntityId
-    );
-    const prevEntity = getOrCreateAirLiquidityPoolOutputTokenStats(
-      prevEntityId
-    );
-    const dailyChangeStats = getOrCreateAirEntityDailyChangeStats(
-      currentEntity.id
-    );
+  // function updateAirLiquidityPoolOutputTokenStatsDailyChangePercentage(
+  //   currentEntityId: string,
+  //   prevEntityId: string
+  // ): void {
+  //   const currentEntity = getOrCreateAirLiquidityPoolOutputTokenStats(
+  //     currentEntityId
+  //   );
+  //   const prevEntity = getOrCreateAirLiquidityPoolOutputTokenStats(
+  //     prevEntityId
+  //   );
+  //   const dailyChangeStats = getOrCreateAirEntityDailyChangeStats(
+  //     currentEntity.id
+  //   );
 
-    dailyChangeStats.walletCountChangeInPercentage = calculatePercentage(
-      currentEntity.walletCount.toBigDecimal(),
-      prevEntity.walletCount.toBigDecimal()
-    );
-    dailyChangeStats.tokenCountChangeInPercentage = calculatePercentage(
-      currentEntity.tokenCount.toBigDecimal(),
-      prevEntity.tokenCount.toBigDecimal()
-    );
-    dailyChangeStats.transactionCountChangeInPercentage = calculatePercentage(
-      currentEntity.transactionCount.toBigDecimal(),
-      prevEntity.transactionCount.toBigDecimal()
-    );
-    dailyChangeStats.volumeInUSDChangeInPercentage = calculatePercentage(
-      currentEntity.volumeInUSD,
-      prevEntity.volumeInUSD
-    );
+  //   dailyChangeStats.walletCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.walletCount.toBigDecimal(),
+  //     prevEntity.walletCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.tokenCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.tokenCount.toBigDecimal(),
+  //     prevEntity.tokenCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.transactionCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.transactionCount.toBigDecimal(),
+  //     prevEntity.transactionCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.volumeInUSDChangeInPercentage = calculatePercentage(
+  //     currentEntity.volumeInUSD,
+  //     prevEntity.volumeInUSD
+  //   );
 
-    dailyChangeStats.save();
-  }
+  //   dailyChangeStats.save();
+  // }
 
   // Swap related
 
@@ -680,73 +735,62 @@ export namespace dex {
     poolAddress: string,
     inputAmounts: Array<BigInt>,
     outputAmounts: Array<BigInt>,
+    inputTokenIndex: i32,
+    outputTokenIndex: i32,
     from: string,
     to: string,
     hash: string,
-    timestamp: BigInt
+    logIndex: BigInt,
+    timestamp: BigInt,
+    blockNumber: BigInt
   ): void {
     const dexPool = getOrCreateAirDexPool(poolAddress);
     if (dexPool.inputToken.length == 0) {
       return;
     }
 
-    let inputIndex = -1;
-    let outputIndex = -1;
-
-    for (let index = 0; index < inputAmounts.length; index++) {
-      const amount = inputAmounts[index];
-      if (amount != BIGINT.ZERO) {
-        inputIndex = index;
-        break;
-      }
-    }
-
-    for (let index = 0; index < outputAmounts.length; index++) {
-      const amount = outputAmounts[index];
-      if (amount != BIGINT.ZERO) {
-        outputIndex = index;
-        break;
-      }
-    }
-
-    if (inputIndex === -1 || outputIndex === -1) {
-      return;
-    }
-
-    const inputTokenAddress = dexPool.inputToken[inputIndex];
+    const inputTokenAddress = dexPool.inputToken[inputTokenIndex];
     const inputToken = getOrCreateAirToken(inputTokenAddress);
     inputToken.save();
     const inputTokenTransfer = getOrCreateAirTokenTransfer(
       inputTokenAddress,
       from,
       to,
-      inputAmounts[inputIndex],
+      inputAmounts[inputTokenIndex],
       dexPool.fee,
-      hash
+      hash,
+      logIndex
     );
 
-    const outputTokenAddress = dexPool.inputToken[outputIndex];
+    const outputTokenAddress = dexPool.inputToken[outputTokenIndex];
     const outputToken = getOrCreateAirToken(outputTokenAddress);
     outputToken.save();
     const outputTokenTransfer = getOrCreateAirTokenTransfer(
       outputTokenAddress,
       to,
       from,
-      outputAmounts[inputIndex],
+      outputAmounts[outputTokenIndex],
       dexPool.fee,
-      hash
+      hash,
+      logIndex
     );
 
     const aggregateEntity = getOrCreateAirDailyAggregateEntity(
+      blockNumber,
       poolAddress,
       AirProtocolType.EXCHANGE,
       AirProtocolActionType.SWAP,
-      timestamp
+      timestamp,
+      inputTokenAddress
     );
-    aggregateEntity.tokenCount = aggregateEntity.tokenCount.plus(BIGINT.ONE);
+    aggregateEntity.tokenCount = aggregateEntity.tokenCount.plus(
+      inputAmounts[inputTokenIndex]
+    );
     aggregateEntity.transactionCount = aggregateEntity.transactionCount.plus(
       BIGINT.ONE
     );
+
+    let walletCount = BIGINT.ZERO;
 
     const fromAggregatedAccountId = getDailyAggregatedAccountId(
       aggregateEntity.id,
@@ -761,6 +805,7 @@ export namespace dex {
     );
     fromAggregatedAccount.dailyAggregatedEntity = aggregateEntity.id;
     if (!isFromAccountAlreadyAdded) {
+      walletCount = walletCount.plus(BIGINT.ONE);
       const currentCount = aggregateEntity.walletCount.plus(BIGINT.ONE);
       aggregateEntity.walletCount = currentCount;
       fromAggregatedAccount.index = currentCount;
@@ -780,6 +825,7 @@ export namespace dex {
     );
     toAggregatedAccount.dailyAggregatedEntity = aggregateEntity.id;
     if (!isToAccountAlreadyAdded) {
+      walletCount = walletCount.plus(BIGINT.ONE);
       const currentCount = aggregateEntity.walletCount.plus(BIGINT.ONE);
       aggregateEntity.walletCount = currentCount;
       toAggregatedAccount.index = currentCount;
@@ -801,7 +847,7 @@ export namespace dex {
     const inputPriceInUsd = usdPrice(
       inputToken.address,
       inputToken.decimals,
-      inputAmounts[inputIndex]
+      inputAmounts[inputTokenIndex]
     );
 
     totalUSDPrice = totalUSDPrice.plus(inputPriceInUsd);
@@ -810,21 +856,25 @@ export namespace dex {
       dexPool.id,
       dexStatsEntity.id,
       inputToken.address,
+      inputAmounts[inputTokenIndex],
       inputPriceInUsd,
-      aggregateEntity.daySinceEpoch
+      aggregateEntity.daySinceEpoch,
+      walletCount
     );
 
     const outputPriceInUsd = usdPrice(
       outputToken.address,
       outputToken.decimals,
-      outputAmounts[outputIndex]
+      outputAmounts[outputTokenIndex]
     );
     updateAirSwapOutputTokenStats(
       dexPool.id,
       dexStatsEntity.id,
       outputToken.address,
+      outputAmounts[outputTokenIndex],
       outputPriceInUsd,
-      aggregateEntity.daySinceEpoch
+      aggregateEntity.daySinceEpoch,
+      walletCount
     );
 
     aggregateEntity.volumeInUSD = aggregateEntity.volumeInUSD.plus(
@@ -841,23 +891,25 @@ export namespace dex {
       dexStatsEntity.id,
       inputTokenTransfer,
       outputTokenTransfer,
-      hash
+      hash,
+      logIndex
     );
 
-    const prevAggregateEntity = getOrCreateAirDailyAggregateEntity(
-      dexPool.poolAddress,
-      AirProtocolType.EXCHANGE,
-      AirProtocolActionType.SWAP,
-      timestamp,
-      aggregateEntity.daySinceEpoch.minus(BIGINT.ONE)
-    );
+    // const prevAggregateEntity = getOrCreateAirDailyAggregateEntity(
+    //   dexPool.poolAddress,
+    //   AirProtocolType.EXCHANGE,
+    //   AirProtocolActionType.SWAP,
+    //   timestamp,
+    //   inputTokenAddress,
+    //   aggregateEntity.daySinceEpoch.minus(BIGINT.ONE)
+    // );
 
-    updateDailyChangePercentage(
-      dexPool.poolAddress,
-      aggregateEntity,
-      prevAggregateEntity,
-      AirProtocolActionType.SWAP
-    );
+    // updateDailyChangePercentage(
+    //   dexPool.poolAddress,
+    //   aggregateEntity,
+    //   prevAggregateEntity,
+    //   AirProtocolActionType.SWAP
+    // );
   }
 
   function getOrCreateAirDexSwapStats(id: string): AirDEXSwapStats {
@@ -879,8 +931,10 @@ export namespace dex {
     dexPoolId: string,
     statsId: string,
     inputTokenAddress: string,
+    tokenAmount: BigInt,
     usdVolume: BigDecimal,
-    daySinceEpoch: BigInt
+    daySinceEpoch: BigInt,
+    walletCount: BigInt
   ): void {
     const entityId = getAirTokenStatsId(
       dexPoolId,
@@ -894,8 +948,10 @@ export namespace dex {
     tokenStats.swapStatsRef = statsId;
     const inputToken = getOrCreateAirToken(inputTokenAddress);
     tokenStats.token = inputToken.id;
-    tokenStats.walletCount = tokenStats.walletCount.plus(BIGINT.ONE);
-    tokenStats.transactionCount = tokenStats.walletCount.plus(BIGINT.ONE);
+    tokenStats.tokenCount = tokenStats.tokenCount.plus(tokenAmount);
+    tokenStats.walletCount = tokenStats.walletCount.plus(walletCount);
+
+    tokenStats.transactionCount = tokenStats.transactionCount.plus(BIGINT.ONE);
     tokenStats.volumeInUSD = tokenStats.volumeInUSD.plus(usdVolume);
 
     tokenStats.save();
@@ -922,12 +978,14 @@ export namespace dex {
     dexPoolId: string,
     statsId: string,
     outputTokenAddress: string,
+    tokenAmount: BigInt,
     usdVolume: BigDecimal,
-    daySinceEpoch: BigInt
+    daySinceEpoch: BigInt,
+    walletCount: BigInt
   ): void {
     const entityId = getAirTokenStatsId(
       dexPoolId,
-      AirProtocolActionType.SWAP.concat("-OUT"),
+      AirProtocolActionType.SWAP,
       outputTokenAddress,
       daySinceEpoch,
       OUT
@@ -937,8 +995,10 @@ export namespace dex {
     tokenStats.swapStatsRef = statsId;
     const outputToken = getOrCreateAirToken(outputTokenAddress);
     tokenStats.token = outputToken.id;
-    tokenStats.walletCount = tokenStats.walletCount.plus(BIGINT.ONE);
-    tokenStats.transactionCount = tokenStats.walletCount.plus(BIGINT.ONE);
+    tokenStats.tokenCount = tokenStats.tokenCount.plus(tokenAmount);
+    tokenStats.walletCount = tokenStats.walletCount.plus(walletCount);
+
+    tokenStats.transactionCount = tokenStats.transactionCount.plus(BIGINT.ONE);
     tokenStats.volumeInUSD = tokenStats.volumeInUSD.plus(usdVolume);
     tokenStats.save();
   }
@@ -965,9 +1025,14 @@ export namespace dex {
     statsId: string,
     inputTokenTransfer: AirTokenTransfer,
     outputTokenTransfer: AirTokenTransfer,
-    hash: string
+    hash: string,
+    logIndex: BigInt
   ): void {
-    const entityId = statsId.concat("-").concat(hash);
+    const entityId = statsId
+      .concat("-")
+      .concat(hash)
+      .concat("-")
+      .concat(logIndex.toHexString());
 
     let transaction = AirDEXSwapTransaction.load(entityId);
     if (transaction === null) {
@@ -981,119 +1046,119 @@ export namespace dex {
     }
   }
 
-  function updateAirSwapStatsDailyChangePercentage(
-    currentEntityId: string,
-    prevEntityId: string
-  ): void {
-    const currentEntity = getOrCreateAirDexSwapStats(currentEntityId);
-    const prevEntity = getOrCreateAirDexSwapStats(prevEntityId);
+  // function updateAirSwapStatsDailyChangePercentage(
+  //   currentEntityId: string,
+  //   prevEntityId: string
+  // ): void {
+  //   const currentEntity = getOrCreateAirDexSwapStats(currentEntityId);
+  //   const prevEntity = getOrCreateAirDexSwapStats(prevEntityId);
 
-    const dailyChangeStats = getOrCreateAirEntityDailyChangeStats(
-      currentEntity.id
-    );
+  //   const dailyChangeStats = getOrCreateAirEntityDailyChangeStats(
+  //     currentEntity.id
+  //   );
 
-    dailyChangeStats.walletCountChangeInPercentage = calculatePercentage(
-      currentEntity.walletCount.toBigDecimal(),
-      prevEntity.walletCount.toBigDecimal()
-    );
-    dailyChangeStats.tokenCountChangeInPercentage = calculatePercentage(
-      currentEntity.tokenCount.toBigDecimal(),
-      prevEntity.tokenCount.toBigDecimal()
-    );
-    dailyChangeStats.transactionCountChangeInPercentage = calculatePercentage(
-      currentEntity.transactionCount.toBigDecimal(),
-      prevEntity.transactionCount.toBigDecimal()
-    );
-    dailyChangeStats.volumeInUSDChangeInPercentage = calculatePercentage(
-      currentEntity.volumeInUSD,
-      prevEntity.volumeInUSD
-    );
+  //   dailyChangeStats.walletCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.walletCount.toBigDecimal(),
+  //     prevEntity.walletCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.tokenCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.tokenCount.toBigDecimal(),
+  //     prevEntity.tokenCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.transactionCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.transactionCount.toBigDecimal(),
+  //     prevEntity.transactionCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.volumeInUSDChangeInPercentage = calculatePercentage(
+  //     currentEntity.volumeInUSD,
+  //     prevEntity.volumeInUSD
+  //   );
 
-    dailyChangeStats.save();
-  }
+  //   dailyChangeStats.save();
+  // }
 
-  function updateAirSwapTokenStatsDailyChangePercentage(
-    poolAddress: string,
-    currentDaySinceEpoch: BigInt
-  ): void {
-    const dexPool = getOrCreateAirDexPool(poolAddress);
+  // function updateAirSwapTokenStatsDailyChangePercentage(
+  //   poolAddress: string,
+  //   currentDaySinceEpoch: BigInt
+  // ): void {
+  //   const dexPool = getOrCreateAirDexPool(poolAddress);
 
-    if (dexPool.inputToken.length > 0) {
-      for (let index = 0; index < dexPool.inputToken.length; index++) {
-        const tokenAddress = dexPool.inputToken[index];
-        const currentEntityId = getAirTokenStatsId(
-          dexPool.id,
-          AirProtocolActionType.SWAP,
-          tokenAddress,
-          currentDaySinceEpoch,
-          IN
-        );
-        const prevEntityId = getAirTokenStatsId(
-          dexPool.id,
-          AirProtocolActionType.SWAP,
-          tokenAddress,
-          currentDaySinceEpoch.minus(BIGINT.ONE),
-          IN
-        );
+  //   if (dexPool.inputToken.length > 0) {
+  //     for (let index = 0; index < dexPool.inputToken.length; index++) {
+  //       const tokenAddress = dexPool.inputToken[index];
+  //       const currentEntityId = getAirTokenStatsId(
+  //         dexPool.id,
+  //         AirProtocolActionType.SWAP,
+  //         tokenAddress,
+  //         currentDaySinceEpoch,
+  //         IN
+  //       );
+  //       const prevEntityId = getAirTokenStatsId(
+  //         dexPool.id,
+  //         AirProtocolActionType.SWAP,
+  //         tokenAddress,
+  //         currentDaySinceEpoch.minus(BIGINT.ONE),
+  //         IN
+  //       );
 
-        updateAirSwapInputTokenStatsDailyChangePercentage(
-          currentEntityId,
-          prevEntityId
-        );
-      }
+  //       updateAirSwapInputTokenStatsDailyChangePercentage(
+  //         currentEntityId,
+  //         prevEntityId
+  //       );
+  //     }
 
-      const outputTokenAddress = dexPool.outputToken;
-      const currentEntityId = getAirTokenStatsId(
-        dexPool.id,
-        AirProtocolActionType.ADD_LIQUIDITY,
-        outputTokenAddress,
-        currentDaySinceEpoch,
-        OUT
-      );
-      const prevEntityId = getAirTokenStatsId(
-        dexPool.id,
-        AirProtocolActionType.ADD_LIQUIDITY,
-        outputTokenAddress,
-        currentDaySinceEpoch.minus(BIGINT.ONE),
-        OUT
-      );
+  //     const outputTokenAddress = dexPool.outputToken;
+  //     const currentEntityId = getAirTokenStatsId(
+  //       dexPool.id,
+  //       AirProtocolActionType.ADD_LIQUIDITY,
+  //       outputTokenAddress,
+  //       currentDaySinceEpoch,
+  //       OUT
+  //     );
+  //     const prevEntityId = getAirTokenStatsId(
+  //       dexPool.id,
+  //       AirProtocolActionType.ADD_LIQUIDITY,
+  //       outputTokenAddress,
+  //       currentDaySinceEpoch.minus(BIGINT.ONE),
+  //       OUT
+  //     );
 
-      updateAirLiquidityPoolOutputTokenStatsDailyChangePercentage(
-        currentEntityId,
-        prevEntityId
-      );
-    }
-  }
+  //     updateAirLiquidityPoolOutputTokenStatsDailyChangePercentage(
+  //       currentEntityId,
+  //       prevEntityId
+  //     );
+  //   }
+  // }
 
-  function updateAirSwapInputTokenStatsDailyChangePercentage(
-    currentEntityId: string,
-    prevEntityId: string
-  ): void {
-    const currentEntity = getOrCreateAirSwapInputTokenStats(currentEntityId);
-    const prevEntity = getOrCreateAirSwapInputTokenStats(prevEntityId);
-    const dailyChangeStats = getOrCreateAirEntityDailyChangeStats(
-      currentEntity.id
-    );
+  // function updateAirSwapInputTokenStatsDailyChangePercentage(
+  //   currentEntityId: string,
+  //   prevEntityId: string
+  // ): void {
+  //   const currentEntity = getOrCreateAirSwapInputTokenStats(currentEntityId);
+  //   const prevEntity = getOrCreateAirSwapInputTokenStats(prevEntityId);
+  //   const dailyChangeStats = getOrCreateAirEntityDailyChangeStats(
+  //     currentEntity.id
+  //   );
 
-    dailyChangeStats.walletCountChangeInPercentage = calculatePercentage(
-      currentEntity.walletCount.toBigDecimal(),
-      prevEntity.walletCount.toBigDecimal()
-    );
-    dailyChangeStats.tokenCountChangeInPercentage = calculatePercentage(
-      currentEntity.tokenCount.toBigDecimal(),
-      prevEntity.tokenCount.toBigDecimal()
-    );
-    dailyChangeStats.transactionCountChangeInPercentage = calculatePercentage(
-      currentEntity.transactionCount.toBigDecimal(),
-      prevEntity.transactionCount.toBigDecimal()
-    );
-    dailyChangeStats.volumeInUSDChangeInPercentage = calculatePercentage(
-      currentEntity.volumeInUSD,
-      prevEntity.volumeInUSD
-    );
+  //   dailyChangeStats.walletCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.walletCount.toBigDecimal(),
+  //     prevEntity.walletCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.tokenCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.tokenCount.toBigDecimal(),
+  //     prevEntity.tokenCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.transactionCountChangeInPercentage = calculatePercentage(
+  //     currentEntity.transactionCount.toBigDecimal(),
+  //     prevEntity.transactionCount.toBigDecimal()
+  //   );
+  //   dailyChangeStats.volumeInUSDChangeInPercentage = calculatePercentage(
+  //     currentEntity.volumeInUSD,
+  //     prevEntity.volumeInUSD
+  //   );
 
-    dailyChangeStats.save();
-  }
+  //   dailyChangeStats.save();
+  // }
 
   // function updateAirSwapOutputTokenStatsDailyChangePercentage(
   //   currentEntityId: string,
@@ -1124,4 +1189,26 @@ export namespace dex {
 
   //   dailyChangeStats.save();
   // }
+
+  export function syncPoolReserve(
+    poolAddress: string,
+    inputBalances: Array<BigInt>
+  ): void {
+    const pool = getOrCreateAirDexPool(poolAddress);
+    pool.tokenBalances = inputBalances;
+    pool.save();
+  }
+
+  export function updatePoolReserve(
+    poolAddress: string,
+    inputBalances: Array<BigInt>
+  ): void {
+    const pool = getOrCreateAirDexPool(poolAddress);
+    const poolBalance = pool.tokenBalances;
+    for (let index = 0; index < poolBalance.length; index++) {
+      poolBalance[index] = poolBalance[index].plus(inputBalances[index]);
+    }
+    pool.tokenBalances = poolBalance;
+    pool.save();
+  }
 }

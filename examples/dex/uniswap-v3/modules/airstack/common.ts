@@ -194,6 +194,7 @@ export function getOrCreateAirContract(contractAddress: Address): AirContract {
 }
 
 export function getOrCreateAirDailyAggregateEntity(
+  blockNumber: BigInt,
   contractAddress: string,
   protocolType: string,
   protocolActionType: string,
@@ -219,6 +220,7 @@ export function getOrCreateAirDailyAggregateEntity(
     entity.daySinceEpoch = BigInt.fromString(
       getDaysSinceEpoch(timestamp.toI32())
     );
+    entity.blockHeight = blockNumber;
     entity.startDayTimestamp = getDayOpenTime(timestamp);
     entity.walletCount = BigInt.zero();
     entity.transactionCount = BigInt.zero();

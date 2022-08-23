@@ -2,6 +2,7 @@ import * as utils from "../common/utils";
 import * as constants from "../common/constants";
 import { CustomPriceType } from "../common/types";
 import { Address, BigDecimal, BigInt } from "@graphprotocol/graph-ts";
+// import { CalculationsCurve as CalculationsCurveContract } from "../../../generated/templates/Pair/CalculationsCurve";
 import { CalculationsCurve as CalculationsCurveContract } from "../../../generated/templates/Pair/CalculationsCurve";
 
 export function getCalculationsCurveContract(

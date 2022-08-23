@@ -114,6 +114,7 @@ type AirDailyAggregateEntity implements AirEntityStats @entity {
   transactionCount: BigInt! # number of transactions (not unique)
   volumeInUSD: BigDecimal! # call price oracle and get the data and +
   dailyChange: AirEntityDailyChangeStats!
+  blockHeight: BigInt!
   extraData: [AirExtraData!]
 }
 
@@ -216,6 +217,7 @@ type AirDEXPool @entity {
   id: ID!
   poolAddress: String!
   inputToken: [AirToken!]!
+  tokenBalances:[BigInt!]!
   weightage: [BigDecimal!]!
   outputToken: AirToken!
   fee: BigInt!
@@ -405,4 +407,10 @@ type AirNFTSaleTransaction @entity {
   paymentAmount: BigInt
   fees: BigInt
   tokenMetadata: AirTokenMetadata
+}
+
+type AirMeta @entity{
+  id: ID!
+  daySinceEpoch: BigInt!
+  blockNumber: BigInt!
 }

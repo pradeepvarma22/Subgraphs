@@ -1,193 +1,307 @@
-import { BigDecimal, BigInt } from "@graphprotocol/graph-ts";
+import {
+  Address,
+  BigDecimal,
+  BigInt,
+  Bytes,
+  dataSource,
+  ethereum,
+  log,
+} from "@graphprotocol/graph-ts";
+import { getDayOpenTime, getDaysSinceEpoch } from "./utils/datetime";
+import { AirInterfaceId, AirTokenStandardType, BIG_DECIMAL } from "./constants";
 
-////////////////////
-///// Versions /////
-////////////////////
+import {
+  AirAccount,
+  AirContract,
+  AirDailyAggregateEntity,
+  AirDailyAggregateEntityAccount,
+  AirDailyAggregateEntityStats,
+  AirEntityDailyChangeStats,
+  AirMeta,
+  AirToken,
+} from "../../generated/schema";
+import { ERC721MetaData } from "../../generated/templates/Pool/ERC721MetaData"; //../../generated/templates/Pool/ERC721MetaData";
+import { ERC20 } from "../../generated/templates/Pool/ERC20";
+import { getNetworkSchemaName } from "./utils/network";
+import { calculatePercentage } from "./utils/maths";
 
-export const PROTOCOL_SCHEMA_VERSION = "1.3.0";
+export function getDailyAggregatedEntityId(
+  contractAddress: string,
+  protocolType: string,
+  protocolActionType: string,
+  timestamp: BigInt,
+  appendId: string,
+  daySinceEpoch: BigInt | null = null
+): string {
+  let entityId = dataSource
+    .network()
+    .concat("-")
+    .concat(contractAddress)
+    .concat("-")
+    .concat(protocolType)
+    .concat("-")
+    .concat(protocolActionType)
+    .concat("-")
+    .concat(appendId);
 
-export const DEFAULT_DECIMALS = 18;
-
-export namespace Address {
-  Zero: "0x0000000000000000000000000000000000000000";
+  if (daySinceEpoch !== null) {
+    entityId = entityId.concat(daySinceEpoch.toString());
+  } else {
+    entityId = entityId.concat(getDaysSinceEpoch(timestamp.toI32()));
+  }
+  return entityId;
 }
 
-export namespace BIGINT {
-  export const NEG_ONE = BigInt.fromI32(-1);
-  export const ZERO = BigInt.fromI32(0);
-  export const ONE = BigInt.fromI32(1);
-  export const TWO = BigInt.fromI32(2);
-  export const TEN = BigInt.fromI32(10);
-  export const HUNDRED = BigInt.fromI32(100);
-  export const _192 = BigInt.fromI32(192);
-  export const TEN_THOUSAND = BigInt.fromI32(10000);
-  export const MILLION = BigInt.fromI32(1000000);
-  export const MAX = BigInt.fromString(
-    "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+export function getDailyAggregatedAccountId(
+  dailyAggregatedEntityId: string,
+  accountId: string
+): string {
+  return dailyAggregatedEntityId.concat("-").concat(accountId);
+}
+
+export function getAirDailyAggregateEntityStatsId(
+  dailyAggregatedEntityId: string
+): string {
+  return dailyAggregatedEntityId.concat("-").concat("stats");
+}
+
+export function getOrCreateAirDailyAggregateEntityStats(
+  id: string
+): AirDailyAggregateEntityStats {
+  let entity = AirDailyAggregateEntityStats.load(id);
+
+  if (entity == null) {
+    entity = new AirDailyAggregateEntityStats(id);
+  }
+  return entity as AirDailyAggregateEntityStats;
+}
+
+export function isAirDailyAggregateEntityAccountAvailable(id: string): boolean {
+  let entity = AirDailyAggregateEntityAccount.load(id);
+  return !(entity == null);
+}
+
+export function getOrCreateAirDailyAggregateEntityAccount(
+  id: string,
+  accountId: string
+): AirDailyAggregateEntityAccount {
+  let entity = AirDailyAggregateEntityAccount.load(id);
+
+  if (entity == null) {
+    entity = new AirDailyAggregateEntityAccount(id);
+    entity.volumeInUSD = BigDecimal.zero();
+    const account = getOrCreateAirAccount(accountId);
+    account.save();
+    entity.account = account.id;
+  }
+  return entity as AirDailyAggregateEntityAccount;
+}
+
+export function getAirTokenId(address: string): string {
+  return dataSource
+    .network()
+    .concat("-")
+    .concat(address);
+}
+
+function supportsInterface(
+  contract: ERC721MetaData,
+  interfaceId: string,
+  expected: boolean = true
+): boolean {
+  let supports = contract.try_supportsInterface(
+    Bytes.fromByteArray(Bytes.fromHexString(interfaceId))
   );
+  return !supports.reverted && supports.value == expected;
 }
 
-export namespace BIG_DECIMAL {
-  export const NEG_ONE = new BigDecimal(BIGINT.NEG_ONE);
-  export const ZERO = new BigDecimal(BIGINT.ZERO);
-  export const ONE = new BigDecimal(BIGINT.ONE);
-  export const TWO = new BigDecimal(BIGINT.TWO);
-  export const TEN = new BigDecimal(BIGINT.TEN);
-  export const HUNDRED = new BigDecimal(BIGINT.HUNDRED);
-  export const _192 = new BigDecimal(BIGINT._192);
-  export const TEN_THOUSAND = new BigDecimal(BIGINT.TEN_THOUSAND);
-  export const MILLION = new BigDecimal(BIGINT.MILLION);
+export function getOrCreateAirToken(id: string): AirToken {
+  let entity = AirToken.load(id); //todo add network
+  if (entity == null) {
+    entity = new AirToken(id);
+    entity.address = id;
+    entity.standard = AirTokenStandardType.ERC20;
+
+    let contract = ERC721MetaData.bind(Address.fromString(id)); //todo should we do 1155?
+
+    let supportsEIP165Identifier = supportsInterface(
+      contract,
+      AirInterfaceId.EIP165
+    );
+    let supportsEIP721Identifier = supportsInterface(
+      contract,
+      AirInterfaceId.EIP721
+    );
+    let supportsEIP1155Identifier = supportsInterface(
+      contract,
+      AirInterfaceId.EIP1155
+    );
+    let supportsNullIdentifierFalse = supportsInterface(
+      contract,
+      AirInterfaceId.Null,
+      false
+    );
+
+    // TODO: Did not understand why supportsEIP165Identifier is needed?
+    let supportsEIP721 =
+      supportsEIP165Identifier &&
+      supportsEIP721Identifier &&
+      supportsEIP1155Identifier &&
+      supportsNullIdentifierFalse;
+
+    if (supportsEIP721) {
+      entity.standard = AirTokenStandardType.ERC721;
+    }
+    //todo convert to enums
+    if (!supportsEIP721) {
+      let erc20Contract = ERC20.bind(Address.fromString(id));
+      let decimals = erc20Contract.try_decimals();
+      entity.decimals = 18;
+      if (!decimals.reverted) {
+        entity.standard = AirTokenStandardType.ERC20;
+        entity.decimals = decimals.value.toI32();
+      }
+
+      let totalSupply = erc20Contract.try_totalSupply(); //todo double confirm
+      if (!totalSupply.reverted) {
+        entity.totalSupply = totalSupply.value;
+      }
+    }
+
+    // todo handle base currency (check messari)
+    let symbol = contract.try_symbol();
+    if (!symbol.reverted) {
+      entity.symbol = symbol.value;
+    }
+
+    let name = contract.try_name();
+    if (!name.reverted) {
+      entity.name = name.value;
+    }
+  }
+  return entity as AirToken;
 }
 
-////////////////////////
-///// Schema Enums /////
-////////////////////////
+export function getOrCreateAirContract(contractAddress: Address): AirContract {
+  const contractAddressString = contractAddress.toHexString();
+  let entity = AirContract.load(contractAddressString);
 
-// The network names corresponding to the Network enum in the schema.
-// They also correspond to the ones in `dataSource.network()` after converting to lower case.
-// See below for a complete list:
-// https://thegraph.com/docs/en/hosted-service/what-is-hosted-service/#supported-networks-on-the-hosted-service
-export namespace NetworkSchemaName {
-  export const ARBITRUM_ONE = "ARBITRUM_ONE";
-  export const AVALANCHE = "AVALANCHE";
-  export const AURORA = "AURORA";
-  export const BSC = "BSC"; // aka BNB Chain
-  export const CELO = "CELO";
-  export const MAINNET = "MAINNET"; // Ethereum mainnet
-  export const FANTOM = "FANTOM";
-  export const FUSE = "FUSE";
-  export const MOONBEAM = "MOONBEAM";
-  export const MOONRIVER = "MOONRIVER";
-  export const NEAR_MAINNET = "NEAR_MAINNET";
-  export const OPTIMISM = "OPTIMISM";
-  export const MATIC = "MATIC"; // aka Polygon
-  export const XDAI = "XDAI"; // aka Gnosis Chain
-}
-export namespace NetworkName {
-  export const ARBITRUM_ONE = "arbitrum-one";
-  export const AVALANCHE = "avalanche";
-  export const AURORA = "aurora";
-  export const BSC = "bsc";
-  export const CELO = "celo";
-  export const MAINNET = "mainnet";
-  export const FANTOM = "fantom";
-  export const FUSE = "fuse";
-  export const MOONBEAM = "Moonbeam";
-  export const MOONRIVER = "moonriver";
-  export const NEAR_MAINNET = "near";
-  export const OPTIMISM = "optimism";
-  export const MATIC = "matic";
-  export const XDAI = "xdai";
+  if (entity == null) {
+    entity = new AirContract(contractAddressString);
+    entity.address = contractAddressString;
+  }
+  return entity as AirContract;
 }
 
-export namespace ProtocolType {
-  export const EXCHANGE = "EXCHANGE";
-  export const LENDING = "LENDING";
-  export const YIELD = "YIELD";
-  export const BRIDGE = "BRIDGE";
-  export const GENERIC = "GENERIC";
+export function getOrCreateAirDailyAggregateEntity(
+  blockNumber: BigInt,
+  contractAddress: string,
+  protocolType: string,
+  protocolActionType: string,
+  timestamp: BigInt,
+  appendId: string,
+  daySinceEpoch: BigInt | null = null
+): AirDailyAggregateEntity {
+  const id = getDailyAggregatedEntityId(
+    contractAddress,
+    protocolType,
+    protocolActionType,
+    timestamp,
+    appendId,
+    daySinceEpoch
+  );
+
+  let entity = AirDailyAggregateEntity.load(id);
+
+  if (entity == null) {
+    entity = new AirDailyAggregateEntity(id);
+    entity.volumeInUSD = BigDecimal.zero();
+    entity.tokenCount = BigInt.zero();
+    entity.daySinceEpoch = BigInt.fromString(
+      getDaysSinceEpoch(timestamp.toI32())
+    );
+    entity.blockHeight = blockNumber;
+    entity.startDayTimestamp = getDayOpenTime(timestamp);
+    entity.walletCount = BigInt.zero();
+    entity.transactionCount = BigInt.zero();
+    entity.network = "MAINNET"; //getNetworkSchemaName(dataSource.network()); //"MAINNET"; //todo remove hardcode, check massari
+    entity.updatedTimestamp = timestamp;
+    entity.protocolType = protocolType;
+    entity.protocolActionType = protocolActionType;
+
+    const airContract = getOrCreateAirContract(
+      Address.fromString(contractAddress)
+    );
+    airContract.save();
+    entity.contract = airContract.id;
+  }
+  return entity as AirDailyAggregateEntity;
 }
 
-export namespace VaultFeeType {
-  export const MANAGEMENT_FEE = "MANAGEMENT_FEE";
-  export const PERFORMANCE_FEE = "PERFORMANCE_FEE";
-  export const DEPOSIT_FEE = "DEPOSIT_FEE";
-  export const WITHDRAWAL_FEE = "WITHDRAWAL_FEE";
+export function getOrCreateAirEntityDailyChangeStats(
+  entityId: string
+): AirEntityDailyChangeStats {
+  let dailyChangeStats = AirEntityDailyChangeStats.load(entityId);
+  if (dailyChangeStats == null) {
+    dailyChangeStats = new AirEntityDailyChangeStats(entityId);
+    dailyChangeStats.walletCountChangeInPercentage = BIG_DECIMAL.ZERO;
+    dailyChangeStats.tokenCountChangeInPercentage = BIG_DECIMAL.ZERO;
+    dailyChangeStats.transactionCountChangeInPercentage = BIG_DECIMAL.ZERO;
+    dailyChangeStats.volumeInUSDChangeInPercentage = BIG_DECIMAL.ZERO;
+  }
+  return dailyChangeStats;
 }
 
-export namespace LiquidityPoolFeeType {
-  export const FIXED_TRADING_FEE = "FIXED_TRADING_FEE";
-  export const TIERED_TRADING_FEE = "TIERED_TRADING_FEE";
-  export const DYNAMIC_TRADING_FEE = "DYNAMIC_TRADING_FEE";
-  export const FIXED_LP_FEE = "FIXED_LP_FEE";
-  export const DYNAMIC_LP_FEE = "DYNAMIC_LP_FEE";
-  export const FIXED_PROTOCOL_FEE = "FIXED_PROTOCOL_FEE";
-  export const DYNAMIC_PROTOCOL_FEE = "DYNAMIC_PROTOCOL_FEE";
+export function getOrCreateAirAccount(accountAddress: string): AirAccount {
+  let airAccount = AirAccount.load(accountAddress);
+  if (airAccount == null) {
+    airAccount = new AirAccount(accountAddress);
+    airAccount.address = accountAddress;
+  }
+  return airAccount;
 }
 
-export namespace HelperStoreType {
-  export const NATIVE_TOKEN = "NATIVE_TOKEN";
-  export const USERS = "USERS";
-  // Pool addresses are also stored in the HelperStore
+export function updateAirDailyAggregateEntityDailyChangePercentage(
+  currentEntity: AirDailyAggregateEntity,
+  prevEntity: AirDailyAggregateEntity
+): void {
+  const dailyChangeStats = getOrCreateAirEntityDailyChangeStats(
+    currentEntity.id
+  );
+
+  dailyChangeStats.walletCountChangeInPercentage = calculatePercentage(
+    currentEntity.walletCount.toBigDecimal(),
+    prevEntity.walletCount.toBigDecimal()
+  );
+  dailyChangeStats.tokenCountChangeInPercentage = calculatePercentage(
+    currentEntity.tokenCount.toBigDecimal(),
+    prevEntity.tokenCount.toBigDecimal()
+  );
+  dailyChangeStats.transactionCountChangeInPercentage = calculatePercentage(
+    currentEntity.transactionCount.toBigDecimal(),
+    prevEntity.transactionCount.toBigDecimal()
+  );
+  dailyChangeStats.volumeInUSDChangeInPercentage = calculatePercentage(
+    currentEntity.volumeInUSD,
+    prevEntity.volumeInUSD
+  );
+
+  dailyChangeStats.save();
 }
 
-export namespace UsageType {
-  export const DEPOSIT = "DEPOSIT";
-  export const WITHDRAW = "WITHDRAW";
-  export const SWAP = "SWAP";
-}
+export function updateAirMeta(event: ethereum.Event): void {
+  const entityId = "AirMeta";
+  let airMeta = AirMeta.load(entityId);
+  if (airMeta == null) {
+    airMeta = new AirMeta(entityId);
+  }
 
-export namespace FeeSwitch {
-  export const ON = "ON";
-  export const OFF = "OFF";
-  // Pool addresses are also stored in the HelperStore
-}
+  airMeta.blockNumber = event.block.number;
 
-export namespace RewardIntervalType {
-  export const BLOCK = "BLOCK";
-  export const TIMESTAMP = "TIMESTAMP";
-  export const NONE = "NONE";
-}
+  const daySinceEpoch = BigInt.fromString(
+    getDaysSinceEpoch(event.block.timestamp.toI32())
+  );
+  airMeta.daySinceEpoch = daySinceEpoch;
 
-export namespace AirTokenStandardType {
-  export const ERC1155 = "ERC1155";
-  export const ERC721 = "ERC721";
-  export const ERC20 = "ERC20";
-}
-
-export namespace AirInterfaceId {
-  export const EIP1155: string = "0xd9b67a26";
-  export const EIP721: string = "0x80ac58cd";
-  export const EIP165: string = "0x01ffc9a7";
-  export const Null: string = "0x00000000";
-}
-
-export namespace AirProtocolType {
-  export const GENERIC = "GENERIC";
-  export const EXCHANGE = "EXCHANGE";
-  export const LENDING = "LENDING";
-  export const YIELD = "YIELD";
-  export const BRIDGE = "BRIDGE";
-  export const DAO = "DAO";
-  export const NFT_MARKET_PLACE = "NFT_MARKET_PLACE";
-  export const STAKING = "STAKING";
-  export const P2E = "P2E";
-  export const LAUNCHPAD = "LAUNCHPAD";
-}
-
-export namespace AirProtocolActionType {
-  // ### NFT Marketplace/Tokens ###;
-  export const BUY = "BUY";
-  export const SELL = "SELL";
-  export const MINT = "MINT";
-  export const BURN = "BURN";
-  // ### NFT (ex: Poap) ###;
-  export const ATTEND = "ATTEND";
-  // ### P2E (NFT + Utility) ###;
-  export const EARN = "EARN";
-  // ### DEX ###;
-  export const SWAP = "SWAP";
-  export const ADD_LIQUIDITY = "ADD_LIQUIDITY";
-  export const REMOVE_LIQUIDITY = "REMOVE_LIQUIDITY";
-  export const ADD_TO_FARM = "ADD_TO_FARM";
-  export const REMOVE_FROM_FARM = "REMOVE_FROM_FARM";
-  export const CLAIM_FARM_REWARD = "CLAIM_FARM_REWARD";
-  // ### Lending ###;
-  export const LEND = "LEND";
-  export const BORROW = "BORROW";
-  export const FLASH_LOAN = "FLASH_LOAN";
-  // ### Staking / Delegating ###;
-  export const STAKE = "STAKE";
-  export const RESTAKE = "RESTAKE";
-  export const UNSTAKE = "UNSTAKE";
-  export const DELEGATE = "DELEGATE";
-  export const CLAIM_REWARDS = "CLAIM_REWARDS";
-}
-
-export namespace AirTokenUsageType {
-  export const GENERIC = "GENERIC";
-  export const LP = "LP";
-  export const REWARD = "REWARD";
-  export const STAKE = "STAKE";
-  export const MINT = "MINT";
+  airMeta.save();
 }
