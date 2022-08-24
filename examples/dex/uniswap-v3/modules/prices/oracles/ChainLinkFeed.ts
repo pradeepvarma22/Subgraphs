@@ -1,42 +1,39 @@
-import * as constants from "../common/constants";
 import { Address } from "@graphprotocol/graph-ts";
 import { CustomPriceType } from "../common/types";
-import { ChainLinkContract } from "../../../generated/templates/Pool/ChainLinkContract";
+import { ChainlinkOracle } from "../../../generated/templates/Pool/ChainlinkOracle";
+import { polygonOracles as oracles } from "./oracles";
+import { ERC20 } from "../../../generated/Factory/ERC20";
+import { ZERO_ADDRESS } from "../common/constants";
+import { CHAIN_LINK_USD_ADDRESS } from "../common/constants";
 
-export function getChainLinkContract(network: string): ChainLinkContract {
-  return ChainLinkContract.bind(
-    constants.CHAIN_LINK_CONTRACT_ADDRESS.get(network)
-  );
+export function getChainLinkContract(asset: string): ChainlinkOracle {
+  for (let i = 0; i < oracles.length; i++) {
+    if (oracles[i][0] === asset) {
+      return ChainlinkOracle.bind(Address.fromString(oracles[i][1]));
+    }
+  }
+  return ChainlinkOracle.bind(ZERO_ADDRESS);
 }
 
 export function getTokenPriceFromChainLink(
-  tokenAddr: Address,
-  network: string
+  tokenAddr: Address
 ): CustomPriceType {
-  const chainLinkContract = getChainLinkContract(network);
+  const tokenContract = ERC20.bind(tokenAddr);
+  const symbol = tokenContract.symbol();
+  const chainLinkContract = getChainLinkContract(symbol);
 
-  if (!chainLinkContract) {
+  if (chainLinkContract._address === ZERO_ADDRESS) {
     return new CustomPriceType();
   }
 
-  let result = chainLinkContract.try_latestRoundData(
-    tokenAddr,
-    constants.CHAIN_LINK_USD_ADDRESS
-  );
+  let result = chainLinkContract.try_latestRoundData();
 
   if (!result.reverted) {
-    let decimals = chainLinkContract.try_decimals(
-      tokenAddr,
-      constants.CHAIN_LINK_USD_ADDRESS
-    );
-
-    if (decimals.reverted) {
-      new CustomPriceType();
-    }
+    const decimals = tokenContract.decimals();
 
     return CustomPriceType.initialize(
       result.value.value1.toBigDecimal(),
-      decimals.value
+      decimals.toI32()
     );
   }
 
